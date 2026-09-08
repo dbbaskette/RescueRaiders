@@ -40,7 +40,7 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 | **`3`** | Deploy AA Truck ($160) — Long-range anti-aircraft flak missiles |
 | **`4`** | Deploy Demo Van ($250) — Strategic objective unit (1 max) |
 | **`P`** | Tactical Pause Menu |
-| **Mouse Click on Radar** | Click the minimap to instantly scan sectors |
+| **Mouse Click on Radar** | Scan a sector for 2.5 seconds; flight input returns to your helicopter |
 | **Mouse Click on Dock** | Click any unit card at the bottom to purchase reinforcements |
 
 ---
@@ -49,7 +49,10 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 
 - **Bunker Capture**: Drop 3 infantry at a neutral or enemy bunker to capture it. Friendly barrage balloons will deploy, giving you airspace cover against enemy fighters.
 - **Barrage Balloon Cables**: Hostile barrage balloon cables will shred your helicopter on impact. Climb over them or sever them with gunfire or bombs.
-- **HQ Rearm & Repair**: Return to your home base landing pad (`H`) and hover low to repair hull damage and replenish your bombs, missiles, and flares.
+- **HQ Rearm & Repair**: Return to your home base landing pad (`H`) and hover low to repair hull damage, refuel, and replenish your bombs, missiles, and flares.
+- **Fuel Management**: A full tank lasts roughly 4–6 minutes depending on horizontal speed. Below 20%, an amber master caution calls you home. At zero fuel, lift and horizontal thrust stop; a forced landing away from HQ costs a helicopter. Land at HQ before running dry.
+- **Missile Lock**: Amber brackets show the target your next missile will acquire (aircraft take priority over ground units). Flares divert incoming missiles while the decoy remains active.
+- **Flight HUD**: The small mark ahead of your helicopter shows gun direction; four pips below it refill between shots. Critical hull below 25% triggers a centered master caution.
 - **Troop Transport**: Infantry walk slowly from base. Landing low and airlifting troops forward in your helicopter's cargo bay (`E`) is significantly faster.
 
 ---
@@ -73,3 +76,13 @@ Or open `index.html` directly in any modern web browser.
 ## 📜 License
 
 MIT License. Assets and tributes inspired by classic retro military gaming.
+
+## Verification
+
+Run the dependency-free gameplay regression suite with Node.js:
+
+```bash
+node --test tests/gameplay.cjs
+```
+
+The game pauses when its window loses focus. Graphics include low-altitude rotor wash, navigation lights, muzzle illumination, and softened ground shadows.

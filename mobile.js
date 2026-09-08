@@ -13,10 +13,11 @@
         <div class="meter"><span>FUEL</span><div class="track"><i id="m-fuel"></i></div><b id="m-fuel-value"></b></div>
         <footer><strong id="m-funds"></strong><span id="m-lives"></span></footer>
       </div>
-      <button class="radar-button" id="m-radar" aria-label="Radar: tap to scan a sector"><canvas id="touch-radar" width="340" height="74"></canvas></button>
+      <div class="radar-stack"><button class="radar-button" id="m-radar" aria-label="Radar: tap to scan a sector"><canvas id="touch-radar" width="340" height="74"></canvas></button>
+        <div class="notice" id="m-notice" hidden></div>
+      </div>
       <div class="top-actions"><button id="m-units">UNITS</button><button id="m-audio" aria-label="Mute sound">SOUND</button><button id="m-pause" aria-label="Pause game">Ⅱ</button></div>
     </div>
-    <div class="notice" id="m-notice" hidden></div>
     <div class="flight-controls" id="m-controls">
       <div id="flight-stick" role="group" aria-label="Flight joystick: drag to steer"><span class="stick-label">FLIGHT</span><div id="stick-knob"></div></div>
       <div class="weapons">
@@ -24,9 +25,9 @@
         <button id="touch-missile" aria-label="Launch missile">MISSILE<small></small></button>
         <button id="touch-fire" aria-label="Hold to fire gun">FIRE</button>
         <button id="touch-flare" aria-label="Deploy flares">FLARE<small></small></button>
+        <button id="cancel-bomb" hidden>Cancel bomb</button>
       </div>
       <button id="touch-cargo" hidden></button>
-      <button id="cancel-bomb" hidden>Cancel bomb</button>
     </div>
     <section class="modal" id="m-modal" role="dialog" aria-modal="true" aria-labelledby="m-title" hidden>
       <div class="panel"><p class="eyebrow">RESCUE RAIDERS / FIELD COMMAND</p><h1 id="m-title"></h1>
@@ -167,7 +168,7 @@
     }
     text('m-funds',`$${G.funds}`);text('m-lives',`${G.lives} lives · ${G.score} pts`);
     text('m-audio',AUDIO_MUTED?'MUTED':'SOUND');el('m-audio').setAttribute('aria-label',AUDIO_MUTED?'Unmute sound':'Mute sound');
-    el('touch-bomb').querySelector('small').textContent=`${Math.floor(p.bombs)} · hold`;
+    el('touch-bomb').querySelector('small').textContent=G.bombAiming?`${bombGroundTime(bombFromHeli(p)).toFixed(1)}s ETA`:`${Math.floor(p.bombs)} · hold`;
     el('touch-missile').querySelector('small').textContent=`${Math.floor(p.mis)}`;
     el('touch-flare').querySelector('small').textContent=`${Math.floor(p.flares)}`;
     el('touch-missile').disabled=(p.mis<1||p.cdMis>0)&&!owners.has(el('touch-missile'));
@@ -187,7 +188,8 @@
     else if(G.msgs.length)notice=G.msgs[0].text;
     else if(G.scanTimer>0)notice='Scanning · Move joystick to return';
     else{const van=G.units.find(u=>u.side<0&&u.type==='VAN');if(van)notice=`Enemy Van · ${Math.round(van.x-PLAYER_X)}m to HQ`;}
-    el('m-notice').hidden=!notice||menu||portrait;el('m-notice').classList.toggle('danger',danger);text('m-notice',notice);
+    el('m-notice').hidden=!notice||menu||portrait;el('m-notice').classList.toggle('danger',danger);const compact=notice.startsWith('CRITICAL HULL')?'HULL CRITICAL · LAND':notice.startsWith('CABLE AHEAD')?'CABLE · CLIMB':notice.startsWith('INCOMING MISSILE')?'MISSILE · FLARE':notice.startsWith('LOW FUEL')?'LOW FUEL · LAND':notice;
+    text('m-notice',compact);el('m-notice').title=notice;
     drawRadar();
   };
   orientation();TOUCH.render();

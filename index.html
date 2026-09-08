@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#090e1c">
+<link rel="stylesheet" href="mobile.css">
 <title>RESCUE RAIDERS — Armor Alley Tribute</title>
 <style>
   html,body{margin:0;padding:0;background:#05060d;height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-system,monospace}
@@ -135,6 +138,7 @@ const SFX={
 // ============================================================ STATE
 let G=null;
 function newGame(){
+  if(typeof TOUCH!=='undefined'&&TOUCH.reset)TOUCH.reset();
   G={
     state:'menu',paused:false,time:0,anim:0,
     funds:300,eFunds:300,ecoT:0,aiT:4,
@@ -165,6 +169,7 @@ function mkHeli(side){
 }
 
 // ============================================================ INPUT & MOUSE
+const TOUCH={active:false,x:0,y:0,fire:false,render:null,reset:null};
 const keys={};
 const mouse={x:-1,y:-1,down:false};
 function getCanvasPos(e){
@@ -186,6 +191,7 @@ addEventListener('keyup',e=>onKeyUp(e.code));
 addEventListener('blur',()=>{
   for(const key in keys)keys[key]=false;
   mouse.down=false;
+  if(TOUCH.reset)TOUCH.reset();
   if(G){G.bombAiming=false;if(G.state==='play')G.paused=true;}
 });
 
@@ -195,7 +201,7 @@ function onKey(code){
     if(G.state==='menu'||G.state==='over'||G.state==='win'){newGame();G.state='play';SFX.blip();}
     return;
   }
-  if(code==='KeyP'&&G.state==='play'){G.paused=!G.paused;G.bombAiming=false;return;}
+  if(code==='KeyP'&&G.state==='play'){if(TOUCH.reset)TOUCH.reset();G.paused=!G.paused;G.bombAiming=false;return;}
   if(G.state!=='play'||G.paused)return;
   const p=G.helis[0];
   if(code==='Digit1')buy(1,'INF');
@@ -625,6 +631,8 @@ function update(dt){
         life:2,c:'#484741',s:3,g:-.02,grow:6,wind:1});
     }
   }
+  // Keep cosmetic work bounded on phones, without changing projectile simulation.
+  if(TOUCH.active&&G.parts.length>180)G.parts.splice(0,G.parts.length-180);
   // particles
   for(let i=G.parts.length-1;i>=0;i--){
     const p=G.parts[i];p.life-=dt;
@@ -671,7 +679,15 @@ function updatePlayerHeli(h,dt){
   if(keys.ArrowRight||keys.KeyD){h.vx+=A*dt;h.dir=1;}
   if(keys.ArrowUp||keys.KeyW)h.vy-=LIFT*dt;
   if(keys.ArrowDown||keys.KeyS)h.vy+=430*dt;
-  if(keys.Space&&h.cdGun<=0){
+  if(TOUCH.active){
+    h.vx+=A*TOUCH.x*dt;
+    if(Math.abs(TOUCH.x)>.12)h.dir=TOUCH.x<0?-1:1;
+    // Counter gravity and damp drift when the stick is released; no lift without fuel.
+    if(Math.abs(TOUCH.y)<.08)h.vy*=Math.exp(-3*dt);
+    h.vy+=(TOUCH.y*(TOUCH.y<0?LIFT:430)-60*power)*dt;
+    if(Math.abs(TOUCH.x)>.08||Math.abs(TOUCH.y)>.08)G.scanTimer=0;
+  }
+  if((keys.Space||TOUCH.fire)&&h.cdGun<=0){
     h.cdGun=GUN_CD;
     fireBullet(h.x+h.dir*32,h.y+3,h.dir,1,7,60);
     SFX.gun();
@@ -952,8 +968,8 @@ function render(){
     cx.fillStyle='rgba(255,240,214,'+G.flash+')';
     cx.fillRect(0,0,W,H);
   }
-  drawHUD();
-  drawOverlays();
+  if(TOUCH.active&&TOUCH.render){G.buttons=[];TOUCH.render();}
+  else{drawHUD();drawOverlays();}
 }
 
 function drawSky(){
@@ -1092,7 +1108,7 @@ function drawBombPredictor(){
   const lx=clamp(x,180,W-180),ly=clamp(p.y-58,160,H-185);
   cx.fillStyle='rgba(9,14,24,.9)';cx.fillRect(lx-150,ly-15,300,36);
   cx.font='bold 11px monospace';cx.textAlign='center';cx.fillStyle=ready?'#ffd97a':'#a0aaba';
-  cx.fillText(ready?'RELEASE B TO DROP • ESC CANCEL':'BOMB RACK RELOADING',lx,ly);
+  cx.fillText(ready?(TOUCH.active?'RELEASE BOMB TO DROP':'RELEASE B TO DROP • ESC CANCEL'):'BOMB RACK RELOADING',lx,ly);
   cx.font='9px monospace';cx.fillStyle='#93a9bc';
   cx.fillText('GROUND ESTIMATE • '+t.toFixed(1)+'s • OBSTACLES MAY INTERCEPT',lx,ly+14);
   cx.restore();
@@ -2209,6 +2225,7 @@ function frame(t){
       cx.fillStyle='#ff5548';cx.font='14px monospace';
       cx.fillText('FAILED: '+ASSET_FAIL.join(', '),W/2,H/2+40);
     }
+    if(TOUCH.active&&TOUCH.render)TOUCH.render();
     return;
   }
   if(G.state==='play'&&!G.paused){
@@ -2224,5 +2241,6 @@ function aiTick(dt){
 }
 requestAnimationFrame(frame);
 </script>
+<script src="mobile.js"></script>
 </body>
 </html>

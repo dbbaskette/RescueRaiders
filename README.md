@@ -46,6 +46,23 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 
 ---
 
+## 📱 Mobile Play
+
+Open the game on a touchscreen phone or tablet and rotate to landscape. Touch controls appear automatically; desktop keyboard controls remain available in the normal desktop interface. To preview the touch interface in a desktop browser, append `?touch=1` to the URL.
+
+- **Left joystick:** Drag to steer proportionally. Release for hover assistance while fuel remains.
+- **FIRE:** Hold to shoot while steering with your other thumb.
+- **BOMB:** Hold to preview, release over the button to drop. Drag off the button or tap **Cancel bomb** to cancel.
+- **MISSILE / FLARE:** Tap to launch or deploy. Ammunition counts appear on the buttons.
+- **Troops:** A boarding/drop button appears when you are low enough and troops are available.
+- **UNITS:** Opens a reinforcement tray and pauses the battle. Choose units, then tap **Back to flight**.
+- **Radar:** Tap to scan a sector; moving the joystick restores tracking.
+- **Pause / rotation:** Rotating to portrait or leaving the page clears held controls and pauses. Return to landscape and resume explicitly.
+
+The mobile HUD uses readable touch targets, safe-area spacing for screen cutouts, and a reduced cosmetic particle budget. Gameplay, missions, and ammunition rules are shared with desktop. This is a mobile browser interface, not a separate app-store download.
+
+---
+
 ## ⚡ Tactical Tips
 
 - **Bunker Capture**: Drop 3 infantry at a neutral or enemy bunker to capture it. Friendly barrage balloons will deploy, giving you airspace cover against enemy fighters.
@@ -85,7 +102,7 @@ MIT License. Assets and tributes inspired by classic retro military gaming.
 Run the dependency-free gameplay regression suite with Node.js:
 
 ```bash
-node --test tests/gameplay.cjs
+node --test tests/*.cjs
 ```
 
 The game pauses when its window loses focus. Graphics include terrain-dependent rotor wash (dust over dirt, clippings over grass), vehicle road dust, wind- and rotor-driven grass movement, drifting smoke, navigation lights, muzzle illumination, and softened ground shadows. Vehicle wrecks remain for 75 seconds (up to 24 at once), with smoke during their first 20 seconds; ground scorch marks fade over 60 seconds. These effects are cosmetic and do not block movement.

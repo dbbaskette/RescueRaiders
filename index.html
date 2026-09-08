@@ -1104,6 +1104,8 @@ function drawBombPredictor(){
   const x=impact.x-G.camX,y=GROUND-6;
   cx.beginPath();cx.ellipse(x,y,22,6,0,0,Math.PI*2);cx.stroke();
   cx.beginPath();cx.moveTo(x-30,y);cx.lineTo(x+30,y);cx.moveTo(x,y-10);cx.lineTo(x,y+5);cx.stroke();
+  // Mobile timing lives on the BOMB control; keep the flight view clear.
+  if(TOUCH.active){cx.restore();return;}
   // Keep the instruction above the ground HUD and within the viewport.
   const lx=clamp(x,180,W-180),ly=clamp(p.y-58,160,H-185);
   cx.fillStyle='rgba(9,14,24,.9)';cx.fillRect(lx-150,ly-15,300,36);

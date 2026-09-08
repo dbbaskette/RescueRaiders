@@ -27,7 +27,8 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 | :--- | :--- |
 | **`W` / `A` / `S` / `D`** or **Arrows** | Flight Pitch, Direction & Altitude |
 | **`SPACE`** | 30mm Minigun (Armor Piercing) |
-| **`B`** | Heavy Blast Bombs (Ground Targets & Bunkers) |
+| **Hold `B` / Release `B`** | Preview bomb trajectory / Drop one bomb (tap for a quick drop) |
+| **`Esc`** | Cancel a held bomb preview |
 | **`M`** | AIM Heat-Seeking Missiles (Air & Armor) |
 | **`C`** | Thermal Flare Decoys (Diverts Incoming Missiles) |
 | **`E`** | Troop Bay: Hover low near infantry to board (up to 4), or hover near bunkers to deploy |
@@ -50,7 +51,9 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 - **Bunker Capture**: Drop 3 infantry at a neutral or enemy bunker to capture it. Friendly barrage balloons will deploy, giving you airspace cover against enemy fighters.
 - **Barrage Balloon Cables**: Hostile barrage balloon cables will shred your helicopter on impact. Climb over them or sever them with gunfire or bombs.
 - **HQ Rearm & Repair**: Return to your home base landing pad (`H`) and hover low to repair hull damage, refuel, and replenish your bombs, missiles, and flares.
-- **Fuel Management**: A full tank lasts roughly 4–6 minutes depending on horizontal speed. Below 20%, an amber master caution calls you home. At zero fuel, lift and horizontal thrust stop; a forced landing away from HQ costs a helicopter. Land at HQ before running dry.
+- **Forward Bases**: Capturing a bunker also opens a marked landing pad just to its right. Hover low and slow over it to restore fuel at 5%/second and repair hull at 4 points/second, up to 75%. Forward pads do not restock ammunition; HQ still provides full repairs and rearming. Service stops if the bunker is recaptured. Green crosses on radar mark friendly forward bases.
+- **Bomb Predictor**: Hold `B` to preview the trajectory and estimated time to ground impact, then release to drop one bomb. The estimate accounts for your speed, altitude, vertical motion, and bomb drag. Units, balloons, and cables may intercept the bomb before it reaches the marker. `Esc`, pausing, or losing focus cancels the preview without dropping.
+- **Fuel Management**: A full tank lasts roughly 4–6 minutes depending on horizontal speed. Below 20%, an amber master caution calls you home. At zero fuel, lift and horizontal thrust stop; a forced landing away from a friendly service pad costs a helicopter. Land at HQ or a friendly forward pad before running dry. A safe landing at either can recover an empty tank.
 - **Missile Lock**: Amber brackets show the target your next missile will acquire (aircraft take priority over ground units). Flares divert incoming missiles while the decoy remains active.
 - **Flight HUD**: The small mark ahead of your helicopter shows gun direction; four pips below it refill between shots. Critical hull below 25% triggers a centered master caution.
 - **Troop Transport**: Infantry walk slowly from base. Landing low and airlifting troops forward in your helicopter's cargo bay (`E`) is significantly faster.
@@ -85,4 +88,4 @@ Run the dependency-free gameplay regression suite with Node.js:
 node --test tests/gameplay.cjs
 ```
 
-The game pauses when its window loses focus. Graphics include low-altitude rotor wash, navigation lights, muzzle illumination, and softened ground shadows.
+The game pauses when its window loses focus. Graphics include terrain-dependent rotor wash (dust over dirt, clippings over grass), vehicle road dust, wind- and rotor-driven grass movement, drifting smoke, navigation lights, muzzle illumination, and softened ground shadows. Vehicle wrecks remain for 75 seconds (up to 24 at once), with smoke during their first 20 seconds; ground scorch marks fade over 60 seconds. These effects are cosmetic and do not block movement.

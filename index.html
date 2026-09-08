@@ -27,6 +27,7 @@ const W=1280,H=720,WORLD=9000,GROUND=622,BALLOON_Y=235;
 const PLAYER_X=150,ENEMY_X=WORLD-150;
 const BUNKER_XS=[1850,3550,5250,6950];
 const CAPTURE_N=3;
+const GUN_CD=.11, FUEL_BURN=.28, LOW_FUEL=20;
 
 const UT={
   INF :{hp:22, spd:44, rng:250, dmg:6,  cd:.55, w:10,h:16, cost:20 },
@@ -148,7 +149,7 @@ function newGame(){
     camX:0,shake:0,flash:0,endMsg:'',
     stats:{deployed:{INF:0,TANK:0,AA:0,VAN:0},kills:0,bunkersCap:0,helisLost:0,cablesSevered:0},
     cableWarning:0,
-    cautionTimer:0,
+    cautionTimer:0,scanTimer:0,
     bannerAlert:null,
     spawnPings:[],
     buttons:[]
@@ -159,7 +160,7 @@ function mkHeli(side){
     hp:100,maxhp:100,dead:false,respawn:0,
     cdGun:0,cdBomb:0,cdMis:0,cableCd:0,
     bombs:8,mis:4,flares:3,cargo:0,seed:Math.random()*10,
-    aiT:0};
+    aiT:0,fuel:100,washTimer:0};
 }
 
 // ============================================================ INPUT & MOUSE
@@ -181,6 +182,11 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
 });
 addEventListener('keyup',e=>keys[e.code]=false);
+addEventListener('blur',()=>{
+  for(const key in keys)keys[key]=false;
+  mouse.down=false;
+  if(G&&G.state==='play')G.paused=true;
+});
 
 function onKey(code){
   ac();
@@ -206,14 +212,14 @@ function onKey(code){
     }else SFX.deny();
   }
   if(p&&!p.dead&&code==='KeyB'&&p.cdBomb<=0){
-    if(p.bombs>0){p.bombs--;p.cdBomb=.7;
+    if(p.bombs>=1){p.bombs--;p.cdBomb=.7;
       G.bombs.push({x:p.x,y:p.y+12,vx:p.vx*.85+p.dir*40,vy:p.vy+40,side:1});
       SFX.blip();
     }else SFX.deny();
   }
   if(p&&!p.dead&&code==='KeyM'&&p.cdMis<=0){
     const t=nearestAirTarget(p.x,p.y,1,1600)||nearestGroundTarget(p.x,p.y,1,1600);
-    if(p.mis>0&&t){p.mis--;p.cdMis=1.1;
+    if(p.mis>=1&&t){p.mis--;p.cdMis=1.1;
       G.missiles.push(mkMissile(p.x+p.dir*20,p.y,t,1));SFX.missile();
     }else SFX.deny();
   }
@@ -320,7 +326,7 @@ function hitBalloonOrCable(x,y,side,dmg){
 function nearestGroundTarget(x,y,side,maxD){
   let best=null,bd=maxD;
   for(const u of G.units)if(u.side!==side){
-    const d=Math.hypot(u.x-x,u.y-y);if(d<bd){bd=d;best=u;}
+    const d=Math.hypot(u.x-x,(GROUND-UT[u.type].h/2)-y);if(d<bd){bd=d;best=u;}
   }
   return best;
 }
@@ -449,7 +455,7 @@ function update(dt){
       if(h.respawn<=0){
         if(h.side>0&&G.lives<=0)continue;
         Object.assign(h,{dead:false,hp:h.maxhp,x:h.side>0?PLAYER_X+140:ENEMY_X-140,
-          y:300,vx:0,vy:0,bombs:8,mis:4,cargo:0});
+          y:300,vx:0,vy:0,bombs:8,mis:4,flares:3,cargo:0,fuel:100,rearming:false,cdGun:0,cdBomb:0,cdMis:0});
       }
       continue;
     }
@@ -465,12 +471,29 @@ function update(dt){
     // pad rearm/repair (own base)
     const bx=h.side>0?PLAYER_X:ENEMY_X;
     if(Math.abs(h.x-bx)<230&&h.y>GROUND-72){
+      h.fuel=Math.min(100,h.fuel+12*dt);
       h.hp=Math.min(h.maxhp,h.hp+14*dt);
       h.bombs=Math.min(8,h.bombs+2.5*dt);
       h.mis=Math.min(4,h.mis+1.2*dt);
       h.flares=Math.min(3,h.flares+1*dt);
       h.rearming=true;
-    }else h.rearming=false;
+    }else{
+      h.rearming=false;
+      if(h.side===1)h.fuel=Math.max(0,h.fuel-FUEL_BURN*(1+Math.abs(h.vx)/430)*dt);
+    }
+    // Rotor downwash disperses dust only near the surface; simulation owns particles.
+    h.washTimer-=dt;
+    if(h.y>GROUND-110&&h.fuel>0&&h.washTimer<=0){
+      h.washTimer=.065;
+      const strength=1-(GROUND-h.y)/130;
+      for(const dir of [-1,1])G.parts.push({x:h.x+dir*rnd(12,38),y:GROUND-rnd(2,9),
+        vx:dir*rnd(50,120)*strength,vy:rnd(-24,-8),life:rnd(.35,.65),
+        c:'#998975',s:rnd(2,5),g:-.03,grow:8});
+    }
+    if(h.side===1&&h.fuel<=0&&!h.rearming&&h.y>=GROUND-16){
+      msg('FORCED LANDING — HELICOPTER LOST','#ffb84d');hurtHeli(h,h.maxhp);
+      continue;
+    }
     // balloon cables (only if balloon alive and cable intact)
     for(const b of G.bunkers){
       if(b.owner===h.side||b.balloonDead||b.cableBroken)continue;
@@ -504,7 +527,7 @@ function update(dt){
   }
 
   // master caution audio alert when hull is critical
-  if(p&&!p.dead&&p.hp<=p.maxhp*0.25){
+  if(p&&!p.dead&&(p.hp<p.maxhp*.25||p.fuel<LOW_FUEL)){
     G.cautionTimer=(G.cautionTimer||0)+dt;
     if(G.cautionTimer>=1.0){
       G.cautionTimer=0;
@@ -555,7 +578,8 @@ function update(dt){
   for(const b of G.bunkers)b.capPulse=Math.max(0,b.capPulse-dt);
 
   // camera
-  if(p){
+  G.scanTimer=Math.max(0,G.scanTimer-dt);
+  if(p&&G.scanTimer<=0){
     G.camX+=((p.x-W/2)-G.camX)*Math.min(1,3.2*dt);
     G.camX=clamp(G.camX,0,WORLD-W);
   }
@@ -578,13 +602,15 @@ function SXP(g){return Math.max(0,600-Math.floor(g.time/2));}
 
 // ---------- player heli
 function updatePlayerHeli(h,dt){
-  const A=430,LIFT=560;
+  const power=h.fuel>0?1:0;
+  const A=430*power,LIFT=560*power;
+  if(keys.KeyW||keys.KeyA||keys.KeyS||keys.KeyD||keys.ArrowUp||keys.ArrowDown||keys.ArrowLeft||keys.ArrowRight)G.scanTimer=0;
   if(keys.ArrowLeft||keys.KeyA){h.vx-=A*dt;h.dir=-1;}
   if(keys.ArrowRight||keys.KeyD){h.vx+=A*dt;h.dir=1;}
   if(keys.ArrowUp||keys.KeyW)h.vy-=LIFT*dt;
   if(keys.ArrowDown||keys.KeyS)h.vy+=430*dt;
   if(keys.Space&&h.cdGun<=0){
-    h.cdGun=.11;
+    h.cdGun=GUN_CD;
     fireBullet(h.x+h.dir*32,h.y+3,h.dir,1,7,60);
     SFX.gun();
   }
@@ -750,7 +776,7 @@ function updateProjectiles(dt){
       }
     }
     const t=m.target;
-    const gone=!t||(t.dead)||(G.units.includes(t)===false&&t!==null&&!G.helis.includes(t));
+    const gone=!t||(t.dead)||(!G.units.includes(t)&&!G.helis.includes(t)&&!G.flares.includes(t));
     if(gone)m.target=null;
     if(m.target){
       const dx=m.target.x-m.x,dy=(m.target.y||GROUND-10)-m.y;
@@ -1085,7 +1111,9 @@ function drawHeli(h){
   // soft ground shadow, shrinks with altitude
   const alt=GROUND-h.y;
   const sa=clamp(.4-alt/1100,.05,.4);
-  cx.fillStyle='rgba(0,0,0,'+sa+')';
+  const shadow=cx.createRadialGradient(x,GROUND-2,1,x,GROUND-2,66);
+  shadow.addColorStop(0,'rgba(0,0,0,'+sa+')');shadow.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=shadow;
   cx.beginPath();
   cx.ellipse(x,GROUND-2,66*clamp(1-alt/1600,.35,1),6,0,0,7);
   cx.fill();
@@ -1129,33 +1157,49 @@ function drawHeli(h){
     cx.fillStyle=h.side===1?'#4db2ff':'#ff5548';
     cx.fillRect(x-24,h.y-38,48*(h.hp/h.maxhp),4);
   }
-  // tactical weapon reticle & cooldown indicator for player chopper
+  // Navigation lamps and momentary muzzle illumination stay attached to the airframe.
+  cx.save();
+  cx.fillStyle=h.side===1?'#83ffbd':'#ff7364';
+  cx.shadowColor=cx.fillStyle;cx.shadowBlur=7;
+  cx.beginPath();cx.arc(x-h.dir*42,h.y+3,1.6,0,Math.PI*2);cx.fill();
+  if(Math.sin(G.anim*5+h.seed)> .94){
+    cx.fillStyle='#fff';cx.fillRect(mx-2,my-4,4,2);
+  }
+  if(h.cdGun>(h.side===1?GUN_CD:.16)-.035){
+    const fx=x+h.dir*40,fy=h.y+3;
+    const glow=cx.createRadialGradient(fx,fy,0,fx,fy,23);
+    glow.addColorStop(0,'rgba(255,230,160,.6)');glow.addColorStop(1,'rgba(255,160,50,0)');
+    cx.fillStyle=glow;cx.fillRect(fx-23,fy-23,46,46);
+  }
+  cx.restore();
   if(h.side===1&&!h.dead){
-    const rx=x+h.dir*72,ry=h.y+3;
-    const gunCdMax=0.11;
-    const cdFrac=clamp(h.cdGun/gunCdMax,0,1);
-    cx.save();
-    if(cdFrac>0){
-      // Cooling down: amber/red charging arc
-      cx.strokeStyle='rgba(255,100,50,0.4)';cx.lineWidth=2;
-      cx.beginPath();cx.arc(rx,ry,11,0,Math.PI*2);cx.stroke();
-      cx.strokeStyle='#ff9933';cx.lineWidth=2.5;
+    const rx=x+h.dir*125,ry=h.y+3;
+    const ready=1-clamp(h.cdGun/GUN_CD,0,1);
+    cx.save();cx.strokeStyle='rgba(190,225,230,.55)';cx.lineWidth=1;
+    cx.beginPath();cx.moveTo(rx-4,ry);cx.lineTo(rx+4,ry);
+    cx.moveTo(rx,ry-3);cx.lineTo(rx,ry+3);cx.stroke();
+    for(let i=0;i<4;i++){
+      cx.fillStyle=i<Math.ceil(ready*4)?'rgba(130,221,211,.65)':'rgba(255,184,77,.25)';
+      cx.fillRect(rx-8+i*5,ry+10,3,2);
+    }
+    const target=nearestAirTarget(h.x,h.y,1,1600)||nearestGroundTarget(h.x,h.y,1,1600);
+    if(target&&h.mis>=1){
+      const tx=target.x-G.camX,ty=target.y??GROUND-UT[target.type].h/2;
+      cx.strokeStyle=h.cdMis<=0?'rgba(255,199,100,.8)':'rgba(255,199,100,.3)';
       cx.beginPath();
-      cx.arc(rx,ry,11,-Math.PI/2,-Math.PI/2+(1-cdFrac)*Math.PI*2);
-      cx.stroke();
-      cx.fillStyle='#ff5533';cx.beginPath();cx.arc(rx,ry,2,0,Math.PI*2);cx.fill();
-    }else{
-      // Ready: crisp cyan/green targeting cross with ready pips
-      cx.strokeStyle='rgba(77,255,180,0.85)';cx.lineWidth=1.5;
-      cx.beginPath();
-      cx.arc(rx,ry,10,0,Math.PI*2);
-      cx.moveTo(rx-14,ry);cx.lineTo(rx-5,ry);
-      cx.moveTo(rx+5,ry);cx.lineTo(rx+14,ry);
-      cx.moveTo(rx,ry-14);cx.lineTo(rx,ry-5);
-      cx.moveTo(rx,ry+5);cx.lineTo(rx,ry+14);
-      cx.stroke();
-      cx.fillStyle='#4dffaa';cx.beginPath();cx.arc(rx,ry,2,0,Math.PI*2);cx.fill();
-      cx.fillRect(rx+h.dir*12-1,ry-5,2,10);
+      for(const d of [-1,1]){
+        cx.moveTo(tx+d*22,ty-8);cx.lineTo(tx+d*22,ty-16);cx.lineTo(tx+d*14,ty-16);
+        cx.moveTo(tx+d*22,ty+8);cx.lineTo(tx+d*22,ty+16);cx.lineTo(tx+d*14,ty+16);
+      }
+      cx.stroke();cx.font='9px monospace';cx.fillStyle='#ffd190';cx.textAlign='center';
+      cx.fillText(h.cdMis<=0?'M • LOCK':'RELOADING',tx,ty-23);
+    }
+    if(h.y>=GROUND-130){
+      const count=G.units.filter(u=>u.type==='INF'&&u.side===1&&Math.abs(u.x-h.x)<115).length;
+      if(h.cargo||count){
+        cx.font='bold 10px monospace';cx.textAlign='center';cx.fillStyle='#c6e8db';
+        cx.fillText(h.cargo?'E • DROP '+h.cargo+' TROOPS':'E • PICK UP '+Math.min(4,count),x,h.y+39);
+      }
     }
     cx.restore();
   }
@@ -1281,7 +1325,7 @@ function drawHUD(){
 
   // 1. TOP-LEFT COCKPIT DASHBOARD (Hull, Lives, Funds, Score, Cargo)
   {
-    const dw=340,dh=98,dx=14,dy=12;
+    const dw=370,dh=120,dx=14,dy=12;
     cx.save();
     const g=cx.createLinearGradient(dx,dy,dx,dy+dh);
     g.addColorStop(0,'rgba(9,14,28,.92)');g.addColorStop(1,'rgba(14,22,42,.92)');
@@ -1332,14 +1376,21 @@ function drawHUD(){
     // Row 2: Funds & Score
     cx.font='bold 20px monospace';cx.fillStyle='#8dff8d';cx.textAlign='left';
     cx.fillText('$'+G.funds,dx+10,dy+46);
+    const fundsWidth=cx.measureText('$'+G.funds).width;
     cx.font='11px monospace';cx.fillStyle='#88a2c8';
-    cx.fillText('(+$25 / 3s)',dx+10+cx.measureText('$'+G.funds).width+8,dy+44);
+    cx.fillText('(+$25 / 3s)',dx+10+fundsWidth+8,dy+44);
 
     cx.font='bold 12px monospace';cx.fillStyle='#ffd97a';cx.textAlign='right';
     cx.fillText('★ SCORE '+G.score,dx+dw-12,dy+45);
 
     // Row 3: Cargo Bay Module & Contextual Altitude Prompt
-    const cy0=dy+56;
+    cx.font='bold 10px monospace';cx.textAlign='left';
+    cx.fillStyle=p.fuel<LOW_FUEL?'#ffb84d':'#8ba3cb';
+    cx.fillText('FUEL',dx+10,dy+64);
+    cx.fillStyle='#202c40';cx.fillRect(dx+52,dy+56,180,8);
+    cx.fillStyle=p.fuel<LOW_FUEL?'#ffb84d':'#73cbbc';cx.fillRect(dx+52,dy+56,180*p.fuel/100,8);
+    cx.fillText(Math.ceil(p.fuel)+'%'+(p.rearming?' REFUELING':''),dx+242,dy+64);
+    const cy0=dy+78;
     cx.fillStyle='rgba(6,10,20,.8)';cx.fillRect(dx+8,cy0,dw-16,32);
     cx.strokeStyle='rgba(50,70,105,.6)';cx.strokeRect(dx+8,cy0,dw-16,32);
 
@@ -1375,7 +1426,7 @@ function drawHUD(){
         cx.fillText('[E] BOARD TROOPS ◀',dx+dw-14,cy0+20);
       }else{
         cx.fillStyle='#7e94b8';
-        cx.fillText('[E] HOVER ACTIVE',dx+dw-14,cy0+20);
+        cx.fillText('NO TROOPS NEARBY',dx+dw-14,cy0+20);
       }
     }else{
       cx.textAlign='right';cx.font='10px monospace';cx.fillStyle='#657a9e';
@@ -1398,7 +1449,7 @@ function drawHUD(){
       const blink=Math.sin(G.anim*6)>0;
       cx.fillStyle=blink?'#8dff8d':'#4db2ff';
       cx.font='bold 11px monospace';cx.textAlign='left';
-      cx.fillText('⚡ HQ REARM & REPAIR ACTIVE (+AMMO/+HP)',ox+10,oy+16);
+      cx.fillText('HQ SERVICE: FUEL / HULL / AMMO',ox+10,oy+16);
     }else{
       cx.fillStyle='#8ba3cb';cx.font='bold 11px monospace';cx.textAlign='left';
       cx.fillText('ORDNANCE & COUNTERMEASURES',ox+10,oy+16);
@@ -1485,7 +1536,7 @@ function drawHUD(){
       drawKeycap(c.key,cx0+6,cy0+6,20,18,hover);
 
       // Stylized unit silhouette badge
-      const iconBoxX=cx0+28,iconBoxY=cy0+5,iconBoxW=22,iconBoxH=20;
+      const iconBoxX=cx0+5,iconBoxY=cy0+26,iconBoxW=36,iconBoxH=20;
       cx.fillStyle=canAfford?'rgba(77,178,255,0.14)':'rgba(255,255,255,0.04)';
       cx.fillRect(iconBoxX,iconBoxY,iconBoxW,iconBoxH);
       cx.strokeStyle=canAfford?'rgba(77,178,255,0.4)':'rgba(255,255,255,0.1)';
@@ -1493,6 +1544,7 @@ function drawHUD(){
       const icCol=vanActive?'#ffb84d':canAfford?'#8dff8d':'#63708a';
       cx.fillStyle=icCol;cx.strokeStyle=icCol;cx.lineWidth=1.2;
       const midX=iconBoxX+iconBoxW/2,midY=iconBoxY+iconBoxH/2;
+      cx.save();cx.translate(midX,midY);cx.scale(1.4,1.15);cx.translate(-midX,-midY);
       if(c.type==='INF'){
         cx.beginPath();cx.arc(midX,midY-4,2.5,0,Math.PI*2);cx.fill();
         cx.fillRect(midX-3,midY-1,6,6);
@@ -1522,22 +1574,23 @@ function drawHUD(){
         cx.fillRect(midX-3,midY-7,3,2);
       }
 
-      cx.font='bold 11px monospace';cx.textAlign='left';
+      cx.restore();
+      cx.font='bold 10px monospace';cx.textAlign='left';
       cx.fillStyle=vanActive?'#ffb84d':canAfford?'#e4ebf5':'#5a6478';
-      cx.fillText(c.name,cx0+54,cy0+19);
+      cx.fillText(c.name,cx0+32,cy0+19);
 
       cx.font='bold 10px monospace';
       if(vanActive){
         cx.fillStyle='#ffd97a';
-        cx.fillText('ACTIVE (1 MAX)',cx0+32,cy0+38);
+        cx.fillText('ACTIVE',cx0+48,cy0+38);
       }else if(canAfford){
         cx.fillStyle='#8dff8d';
-        cx.fillText('$'+c.cost,cx0+32,cy0+38);
+        cx.fillText('$'+c.cost,cx0+48,cy0+38);
         cx.font='9px monospace';cx.fillStyle='#8ba3cb';
-        cx.fillText('• '+c.sub,cx0+72,cy0+38);
+
       }else{
         cx.fillStyle='#ff5548';
-        cx.fillText('$'+c.cost+' (-$'+(c.cost-G.funds)+')',cx0+32,cy0+38);
+        cx.fillText('$'+c.cost+' (-$'+(c.cost-G.funds)+')',cx0+48,cy0+38);
       }
     });
     cx.restore();
@@ -1583,7 +1636,7 @@ function drawHUD(){
         cx.fillStyle=u.side===1?'#4db2ff':'#ff3333';
         cx.strokeStyle=pulse?'#ffffff':'#ffb84d';cx.lineWidth=1.5;
         cx.beginPath();
-        cx.moveTo(ux,uy-6);cx.lineTo(ux+5,uy);cx.lineTo(ux,uy+6);cx.lineTo(ux-5,uy);
+        cx.moveTo(ux+u.side*6,uy);cx.lineTo(ux-u.side*4,uy-6);cx.lineTo(ux-u.side,uy);cx.lineTo(ux-u.side*4,uy+6);
         cx.closePath();cx.fill();cx.stroke();
         cx.fillStyle=pulse?'#ffffff':'#ffd97a';
         cx.beginPath();cx.arc(ux,uy,1.8,0,Math.PI*2);cx.fill();
@@ -1613,12 +1666,11 @@ function drawHUD(){
       cx.beginPath();cx.arc(hx,hy,4.5,0,Math.PI*2);cx.stroke();
       cx.fillStyle=h.side===1?'#ffffff':'#ffd070';
       cx.beginPath();cx.arc(hx,hy,2,0,Math.PI*2);cx.fill();
-      // dynamic directional crosshair chevron
+      // Crosshair ticks distinguish aircraft from ground objective chevrons
       cx.strokeStyle=h.side===1?'#ffffff':hCol;cx.lineWidth=1.5;
       cx.beginPath();
-      cx.moveTo(hx-h.dir*5,hy-3.5);
-      cx.lineTo(hx+h.dir*6,hy);
-      cx.lineTo(hx-h.dir*5,hy+3.5);
+      cx.moveTo(hx-7,hy);cx.lineTo(hx-3,hy);cx.moveTo(hx+3,hy);cx.lineTo(hx+7,hy);
+      cx.moveTo(hx,hy-7);cx.lineTo(hx,hy-3);cx.moveTo(hx,hy+3);cx.lineTo(hx,hy+7);
       cx.stroke();
     }
 
@@ -1628,7 +1680,7 @@ function drawHUD(){
     cx.strokeRect(camL,ry+1,camW,rh-2);
 
     cx.font='9px monospace';cx.fillStyle='rgba(160,190,230,.7)';cx.textAlign='center';
-    cx.fillText('RADAR (CLICK TO SCAN)',rx+rw/2,ry-4);
+    cx.fillText((G.scanTimer>0?'SCANNING • MOVE TO RETURN':'RADAR • CLICK TO SCAN'),rx+rw/2,ry-4);
     cx.restore();
   }
 
@@ -1672,13 +1724,14 @@ function drawHUD(){
   }
 
   // 6b. MASTER CAUTION SYSTEM (CRITICAL HULL INTEGRITY)
-  if(p&&!p.dead&&p.hp<=p.maxhp*0.25){
+  if(p&&!p.dead&&(p.hp<p.maxhp*.25||p.fuel<LOW_FUEL)){
     const blink=Math.sin(G.anim*10)>0;
-    const cw=440,ch=36,cx0=W/2-cw/2,cy0=64;
+    const cw=350,ch=42,cx0=W/2-cw/2,cy0=H/2-124;
     cx.save();
-    cx.fillStyle=blink?'rgba(180,20,20,0.92)':'rgba(60,10,10,0.88)';
+    const hullCritical=p.hp<p.maxhp*.25;
+    cx.fillStyle=hullCritical?(blink?'rgba(180,20,20,.92)':'rgba(60,10,10,.88)'):(blink?'rgba(115,72,12,.92)':'rgba(48,32,12,.88)');
     cx.fillRect(cx0,cy0,cw,ch);
-    cx.strokeStyle=blink?'#ff4d4d':'#ffaa33';cx.lineWidth=2;
+    cx.strokeStyle=hullCritical&&blink?'#ff4d4d':'#ffaa33';cx.lineWidth=2;
     cx.strokeRect(cx0,cy0,cw,ch);
     // Corner caution brackets
     cx.fillStyle='#ffdd55';
@@ -1690,10 +1743,11 @@ function drawHUD(){
     cx.font='bold 12px monospace';cx.textAlign='center';
     cx.fillStyle=blink?'#ffffff':'#ffcc44';
     const hpLeft=Math.max(0,Math.round((p.hp/p.maxhp)*100));
-    cx.fillText('⚠️ MASTER CAUTION: CRITICAL HULL INTEGRITY ('+hpLeft+'%) ⚠️',W/2,cy0+22);
+    cx.fillText(p.hp<p.maxhp*.25?'MASTER CAUTION • HULL '+hpLeft+'%':p.fuel<=0?'ENGINE OUT • RETURN TO HQ':'MASTER CAUTION • LOW FUEL',W/2,cy0+17);
+    cx.font='10px monospace';cx.fillText('RETURN TO HOME PAD FOR SERVICE',W/2,cy0+32);
     // cockpit pulsing perimeter vignette
     cx.fillStyle=blink?'rgba(255,20,20,0.09)':'rgba(255,20,20,0.03)';
-    cx.fillRect(0,0,W,H);
+    cx.fillRect(0,0,5,H);cx.fillRect(W-5,0,5,H);
     cx.restore();
   }
 
@@ -2000,6 +2054,7 @@ function handleCanvasClick(mx,my){
     if(mx>=rx&&mx<=rx+rw&&my>=ry&&my<=ry+rh){
       const tx=(mx-rx)/rw*WORLD;
       G.camX=clamp(tx-W/2,0,WORLD-W);
+      G.scanTimer=2.5;
       SFX.blip();
       return;
     }

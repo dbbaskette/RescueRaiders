@@ -1,6 +1,10 @@
 # RESCUE RAIDERS — Armor Alley Tribute
 
+[![Play Online](https://img.shields.io/badge/Play%20Online-GitHub%20Pages-brightgreen?style=for-the-badge&logo=github)](https://dbbaskette.github.io/RescueRaiders/)
+
 A fast-paced tactical side-scrolling air-ground combat game built in pure HTML5 Canvas and Web Audio API, paying homage to the classic Apple II / DOS retro titles *Rescue Raiders* and *Armor Alley*.
+
+🎮 **[Play Live Now on GitHub Pages](https://dbbaskette.github.io/RescueRaiders/)**
 
 ![Gameplay Screenshot](assets/backdrop.jpg)
 

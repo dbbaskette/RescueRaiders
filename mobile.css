@@ -40,7 +40,7 @@ body.touch-mode #mobile-ui { display:block; position:fixed; inset:0; z-index:5; 
 #mobile-ui .description { color:#b8ccca; line-height:1.6; margin:0 0 16px; font-weight:400 }
 #mobile-ui .panel-actions { display:flex; gap:9px; flex-wrap:wrap }
 #mobile-ui .primary { background:#376253; border-color:#98d6b9; min-width:140px }
-#mobile-ui .units { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:12px 0 }
+#mobile-ui .units { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:12px 0 }
 #mobile-ui .units button { min-height:86px; padding:8px 4px; font-size:11px }
 #mobile-ui .units svg { display:block; width:32px; height:24px; fill:currentColor; margin:0 auto 4px }
 #mobile-ui .units small { display:block; color:#addbb9; margin-top:5px }

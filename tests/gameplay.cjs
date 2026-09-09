@@ -27,7 +27,7 @@ test('flare remains a valid missile target until it expires',()=>game()(`
 test('fuel burns in flight, refills at HQ, and engine-out prevents lift',()=>game()(`
  const p=G.helis[0];update(.1);assert.ok(p.fuel<100);
  p.x=PLAYER_X;p.y=GROUND-20;p.fuel=10;update(.1);assert.ok(p.fuel>10);assert.ok(p.rearming);
- p.fuel=0;p.vy=0;keys.KeyW=true;updatePlayerHeli(p,.1);assert.equal(p.vy,0);
+ p.fuel=0;p.reserve=0;p.vy=0;keys.KeyW=true;updatePlayerHeli(p,.1);assert.equal(p.vy,0);
 `));
 test('respawn restores fuel, flares and weapon readiness',()=>game()(`
  const p=G.helis[0];Object.assign(p,{dead:true,respawn:0,fuel:0,flares:0,cdMis:5});update(.016);
@@ -49,7 +49,7 @@ test('render supports normal, caution, service, pause and dead states',()=>game(
  G.helis[0].dead=true;render();G.state='over';render();
 `));
 test('engine-out landing costs a life, while landing at HQ recovers',()=>game()(`
- const p=G.helis[0];p.x=1000;p.y=GROUND-16;p.fuel=0;update(.016);
+ const p=G.helis[0];p.x=1000;p.y=GROUND-16;p.fuel=0;p.reserve=0;update(.016);
  assert.equal(p.dead,true);assert.equal(G.lives,2);
  newGame();const q=G.helis[0];q.x=PLAYER_X;q.y=GROUND-16;q.fuel=0;update(.016);
  assert.equal(q.dead,false);assert.ok(q.fuel>0);
@@ -79,7 +79,7 @@ test('capture activates forward service and saves an engine-out landing',()=>gam
  const b=G.bunkers[0],p=G.helis[0];
  for(let i=0;i<3;i++){const u=spawnUnit(1,'INF');u.x=b.x;}
  updateCapture(.1);assert.equal(b.owner,1);
- p.x=forwardPadX(b);p.y=GROUND-16;p.fuel=0;update(.016);
+ p.x=forwardPadX(b);p.y=GROUND-16;p.fuel=0;p.reserve=0;update(.016);
  assert.equal(p.dead,false);assert.ok(p.fuel>0);assert.equal(p.service,'forward');
 `));
 test('ballistic estimate matches live integration at different frame rates',()=>game()(`
@@ -118,4 +118,55 @@ test('live bomb lands at the displayed ground estimate and consumes itself',()=>
  G.bombs.push(bomb);
  for(let i=0;i<500&&G.bombs.length;i++)updateProjectiles(1/60);
  assert.equal(G.bombs.length,0);assert.ok(Math.abs(G.decals.at(-1).x-expected.x)<.001);
+`));
+test('emergency reserve provides temporary lift and resets only after sufficient refueling',()=>game()(`
+ const p=G.helis[0];p.x=1000;p.fuel=0;p.reserve=20;keys.KeyW=true;update(.1);
+ assert.ok(p.vy<0);assert.ok(p.reserve<20);assert.equal(p.dead,false);
+ keys.KeyW=false;p.reserve=.01;update(.1);assert.equal(p.reserve,0);
+ p.vy=0;keys.KeyW=true;updatePlayerHeli(p,.1);assert.equal(p.vy,0);keys.KeyW=false;
+ p.x=PLAYER_X;p.y=GROUND-20;p.vy=0;p.fuel=0;p.reserve=3;update(1);
+ assert.equal(p.reserve,3);update(1);assert.equal(p.reserve,RESERVE_SECONDS);
+`));
+test('difficulty changes starting funds, incoming damage and deployment cadence',()=>game()(`
+ for(const id of ['recruit','normal','veteran']){
+   SETTINGS.difficulty=id;newGame();assert.equal(G.funds,DIFFICULTIES[id].funds);
+   const p=G.helis[0];hurtHeli(p,10,{x:p.x-100,y:p.y});
+   assert.equal(p.hp,100-10*DIFFICULTIES[id].damage);
+   let calls=0;aiDecide=()=>calls++;aiTick(DIFFICULTIES[id].interval-.1);assert.equal(calls,0);
+   aiTick(.11);assert.equal(calls,1);
+ }
+`));
+test('damage indicators identify each direction and fade',()=>game()(`
+ const p=G.helis[0];
+ for(const [edge,dx,dy] of [['left',-100,0],['right',100,0],['top',0,-100],['bottom',0,100]]){
+   hurtHeli(p,1,{x:p.x+dx,y:p.y+dy});assert.equal(G.damageEdges[edge],.65);
+ }
+ update(.7);for(const time of Object.values(G.damageEdges))assert.equal(time,0);
+`));
+test('van estimate uses the breach line and warns only on escalating thresholds',()=>game()(`
+ let alarms=0;SFX.alarm=()=>alarms++;
+ const v=spawnUnit(-1,'VAN');v.x=PLAYER_X+70+UT.VAN.spd*40;
+ assert.equal(vanThreat().seconds,40);assert.equal(formatETA(40),'0:40');update(.01);assert.equal(alarms,0);
+ v.x=PLAYER_X+70+UT.VAN.spd*25;update(.01);assert.equal(alarms,1);update(.01);assert.equal(alarms,1);
+ v.x=PLAYER_X+70+UT.VAN.spd*10;update(.01);assert.equal(alarms,2);
+`));
+test('training completes flight, bomb impact, boarding and bunker capture',()=>game()(`
+ ac=()=>{};startTutorial();const p=G.helis[0];
+ aiDecide();assert.equal(G.units.length,0);assert.equal(G.helis[1].dead,true);
+ p.x=510;updateTutorial();assert.equal(G.tutorial.step,1);
+ onKey('KeyB');onKeyUp('KeyB');for(let i=0;i<400&&G.bombs.length;i++)updateProjectiles(1/60);
+ updateTutorial();assert.equal(G.tutorial.step,2);assert.equal(G.units.length,3);
+ const x=G.units[0].x;updateUnits(1);assert.equal(G.units[0].x,x);
+ p.y=GROUND-30;troopTransfer(p);updateTutorial();assert.equal(G.tutorial.step,3);
+ p.x=G.bunkers[0].x;troopTransfer(p);updateCapture(.1);updateTutorial();assert.equal(G.state,'win');
+ newGame();assert.equal(G.tutorial,null);assert.equal(G.helis[1].dead,false);
+`));
+test('cables become urgent only near the player and routine messages are tagged',()=>game()(`
+ const b=G.bunkers[0],p=G.helis[0];assert.equal(cableIsUrgent(b),false);
+ p.x=b.x;p.y=400;assert.equal(cableIsUrgent(b),true);b.owner=1;assert.equal(cableIsUrgent(b),false);
+ buy(1,'INF');assert.equal(G.msgs[0].kind,'routine');
+`));
+test('training restarts after a helicopter loss rather than losing required cargo forever',()=>game()(`
+ startTutorial();G.tutorial.step=3;const p=G.helis[0];p.cargo=3;hurtHeli(p,100);
+ p.respawn=0;update(.016);assert.equal(G.tutorial.step,0);assert.equal(G.helis[0].dead,false);
 `));

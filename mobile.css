@@ -56,3 +56,17 @@ body.touch-mode #mobile-ui { display:block; position:fixed; inset:0; z-index:5; 
  #mobile-ui #flight-stick { width:108px; height:108px; left:max(14px,env(safe-area-inset-left)) }
  #mobile-ui .weapons { right:max(12px,env(safe-area-inset-right)); gap:5px }
 }
+
+#mobile-ui .difficulty-options { display:flex; gap:7px; margin:10px 0 14px }
+#mobile-ui .difficulty-options button { flex:1; min-height:36px }
+#mobile-ui .difficulty-options button.selected { background:#315d4b; border-color:#a3d7ad }
+#mobile-ui #m-training { position:absolute; left:50%; bottom:74px; transform:translateX(-50%); width:calc(100% - 320px); max-width:370px; padding:6px; background:#10251ddd; border-radius:6px; color:#b9dfc8; text-align:center; font-size:11px; line-height:1.4 }
+#mobile-ui #m-van { color:#c8d9cc; margin-top:4px; font-size:11px }
+#mobile-ui #m-van.urgent { color:#ffc184; font-weight:800 }
+#mobile-ui .track i.servicing { background:#b3ffc3!important; box-shadow:0 0 6px #aaffc0 }
+@media(max-height:360px) {
+ #mobile-ui .panel { padding:12px }
+ #mobile-ui .description { margin-bottom:8px; line-height:1.4 }
+ #mobile-ui .difficulty-options { margin:6px 0 8px }
+ #mobile-ui h1 { margin-bottom:6px }
+}

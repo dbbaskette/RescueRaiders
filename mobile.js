@@ -11,13 +11,14 @@
       <div class="status">
         <div class="meter"><span>HULL</span><div class="track"><i id="m-hull"></i></div><b id="m-hull-value"></b></div>
         <div class="meter"><span>FUEL</span><div class="track"><i id="m-fuel"></i></div><b id="m-fuel-value"></b></div>
-        <footer><strong id="m-funds"></strong><span id="m-lives"></span></footer>
+        <footer><strong id="m-funds"></strong><span id="m-lives"></span></footer><div id="m-van" hidden></div>
       </div>
       <div class="radar-stack"><button class="radar-button" id="m-radar" aria-label="Radar: tap to scan a sector"><canvas id="touch-radar" width="340" height="74"></canvas></button>
         <div class="notice" id="m-notice" hidden></div>
       </div>
       <div class="top-actions"><button id="m-units">UNITS</button><button id="m-audio" aria-label="Mute sound">SOUND</button><button id="m-pause" aria-label="Pause game">Ⅱ</button></div>
     </div>
+    <div id="m-training" hidden></div>
     <div class="flight-controls" id="m-controls">
       <div id="flight-stick" role="group" aria-label="Flight joystick: drag to steer"><span class="stick-label">FLIGHT</span><div id="stick-knob"></div></div>
       <div class="weapons">
@@ -32,9 +33,10 @@
     <section class="modal" id="m-modal" role="dialog" aria-modal="true" aria-labelledby="m-title" hidden>
       <div class="panel"><p class="eyebrow">RESCUE RAIDERS / FIELD COMMAND</p><h1 id="m-title"></h1>
         <p class="description" id="m-description"></p>
+        <div class="difficulty-options" id="m-options" role="group" aria-label="Difficulty"></div>
         <div class="units" id="m-unit-list" hidden></div>
         <p class="tray-status" id="m-tray-status" role="status" hidden></p>
-        <div class="panel-actions"><button class="primary" id="m-primary"></button><button id="m-restart" hidden>Restart mission</button></div>
+        <div class="panel-actions"><button class="primary" id="m-primary"></button><button id="m-restart" hidden>Restart mission</button><button id="m-tutorial">Training sortie</button></div>
       </div>
     </section>
     <section class="modal rotate" id="m-rotate" role="dialog" aria-modal="true" aria-label="Rotate your phone" hidden>
@@ -105,7 +107,15 @@
     else if(G.state==='play')G.paused=false;
     else{newGame();G.state='play';}
   });
-  el('m-restart').addEventListener('click',()=>{if(portrait)return;unlock();tray=false;newGame();G.state='play';});
+  el('m-restart').addEventListener('click',()=>{if(portrait)return;unlock();tray=false;restartMission();});
+  el('m-tutorial').addEventListener('click',()=>{if(portrait||!ASSETS_OK)return;unlock();tray=false;startTutorial();});
+  const difficultyButtons=[];
+  for(const [id,mode] of Object.entries(DIFFICULTIES)){
+    const button=document.createElement('button');button.textContent=mode.name;
+    button.title=`$${mode.funds} starting funds · ${Math.round(mode.damage*100)}% incoming hull damage · enemy orders every ${mode.interval}s`;
+    button.addEventListener('click',()=>{if(G.state!=='play')SETTINGS.difficulty=id;});
+    el('m-options').append(button);difficultyButtons.push({button,id});
+  }
   const icons={INF:'M14 2h5v5h-5z M12 9h9v9h-3v6h-3v-6h-3z M20 10h9v3h-9z',TANK:'M2 17h30v6H2z M6 11h22v6H6z M12 6h12v5H12z M21 7h12v3H21z',AA:'M2 17h30v6H2z M8 12h17v5H8z M14 12l9-11 3 2-9 11z M20 12l9-11 3 2-9 11z',VAN:'M2 8h22v11H2z M24 12h7v7h-7z M6 19h5v5H6z M23 19h5v5h-5z'};
   const unitButtons=[];
   for(const [type,name] of [['INF','Infantry'],['TANK','Tank'],['AA','AA truck'],['VAN','Demo van']]){
@@ -156,7 +166,10 @@
     el('m-modal').hidden=!menu||portrait;
     el('m-unit-list').hidden=!tray;el('m-tray-status').hidden=!tray;
     el('m-restart').hidden=tray||G.state!=='play';
-    el('m-primary').disabled=!ASSETS_OK;
+    el('m-primary').disabled=!ASSETS_OK;el('m-units').disabled=!!G.tutorial;
+    el('m-options').hidden=G.state==='play'||tray;el('m-tutorial').hidden=G.state==='play'||tray;
+    for(const {button,id} of difficultyButtons){button.classList.toggle('selected',SETTINGS.difficulty===id);button.setAttribute('aria-pressed',String(SETTINGS.difficulty===id));}
+    el('m-training').hidden=!G.tutorial||menu||portrait;text('m-training',tutorialHint());
     if(menu){
       text('m-title',!ASSETS_OK?'Loading aircraft…':tray?'Reinforcements':G.state==='menu'?'RESCUE RAIDERS':G.state==='win'?'Mission accomplished':G.state==='over'?'Mission failed':'Flight paused');
       text('m-description',tray?`$${G.funds} available · Escort your Demo Van to enemy HQ.`:G.state==='menu'?'Left thumb: steer. Right thumb: hold FIRE, hold and release BOMB. Capture bunkers and escort your Demo Van to enemy HQ.':G.state==='play'?'Your helicopter is safe while paused. Resume when you are ready.':`${G.endMsg} · Score ${G.score}`);
@@ -164,7 +177,8 @@
     }
     for(const {button,type} of unitButtons){const active=type==='VAN'&&G.units.some(u=>u.side===1&&u.type==='VAN');button.disabled=active||G.funds<UT[type].cost;button.querySelector('small').textContent=active?'Active':`$${UT[type].cost}`;}
     for(const [name,value] of [['hull',Math.max(0,p.hp/p.maxhp*100)],['fuel',p.fuel]]){
-      el(`m-${name}`).style.width=`${value}%`;el(`m-${name}`).style.background=value<(name==='fuel'?20:25)?'#ffb16f':'#8edfb1';text(`m-${name}-value`,`${Math.ceil(value)}%`);
+      el(`m-${name}`).style.width=`${value}%`;el(`m-${name}`).style.background=value<(name==='fuel'?20:25)?'#ffb16f':'#8edfb1';text(`m-${name}-value`,name==='fuel'&&p.fuel<=0?`R ${Math.ceil(p.reserve)}s`:`${Math.ceil(value)}%`);
+      el(`m-${name}`).classList.toggle('servicing',p.rearming);
     }
     text('m-funds',`$${G.funds}`);text('m-lives',`${G.lives} lives · ${G.score} pts`);
     text('m-audio',AUDIO_MUTED?'MUTED':'SOUND');el('m-audio').setAttribute('aria-label',AUDIO_MUTED?'Unmute sound':'Mute sound');
@@ -182,12 +196,15 @@
     else if(p.hp<p.maxhp*.25){notice='CRITICAL HULL · Land at a friendly pad';danger=true;}
     else if(G.cableWarning>.05){notice='CABLE AHEAD · Climb or turn';danger=true;}
     else if(G.missiles.some(m=>m.side<0&&m.target===p)){notice='INCOMING MISSILE · Deploy flares';danger=true;}
+    else if(p.fuel<=0){notice=p.reserve>0?`RESERVE ${Math.ceil(p.reserve)}s · LAND`:'ENGINE OUT';danger=true;}
     else if(p.fuel<LOW_FUEL){notice='LOW FUEL · Land at a friendly pad';danger=true;}
     else if(G.bannerAlert)notice=G.bannerAlert.title;
-    else if(p.rearming)notice=p.service==='forward'?'Forward service · fuel + hull to 75%':'HQ service · fuel, hull + ammunition';
-    else if(G.msgs.length)notice=G.msgs[0].text;
+    else if(G.msgs.some(m=>m.kind!=='routine'))notice=G.msgs.find(m=>m.kind!=='routine').text;
     else if(G.scanTimer>0)notice='Scanning · Move joystick to return';
-    else{const van=G.units.find(u=>u.side<0&&u.type==='VAN');if(van)notice=`Enemy Van · ${Math.round(van.x-PLAYER_X)}m to HQ`;}
+    const threat=vanThreat();
+    el('m-van').hidden=!threat||menu||portrait;
+    text('m-van',threat?`HQ breach ~${formatETA(threat.seconds)}`:'');
+    el('m-van').classList.toggle('urgent',!!threat&&threat.level>0);
     el('m-notice').hidden=!notice||menu||portrait;el('m-notice').classList.toggle('danger',danger);const compact=notice.startsWith('CRITICAL HULL')?'HULL CRITICAL · LAND':notice.startsWith('CABLE AHEAD')?'CABLE · CLIMB':notice.startsWith('INCOMING MISSILE')?'MISSILE · FLARE':notice.startsWith('LOW FUEL')?'LOW FUEL · LAND':notice;
     text('m-notice',compact);el('m-notice').title=notice;
     drawRadar();

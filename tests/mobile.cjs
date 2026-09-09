@@ -67,7 +67,7 @@ test('rotation and backgrounding clear touches and require explicit resume',()=>
 test('hover assistance holds altitude with fuel but cannot hover with an empty tank',()=>mobile()(`
  emit('m-primary','click');const p=G.helis[0];const y=p.y;
  for(let i=0;i<60;i++)update(1/60);assert.ok(Math.abs(p.y-y)<.001);
- p.fuel=0;for(let i=0;i<60;i++)update(1/60);assert.ok(p.y>y+1);
+ p.fuel=0;p.reserve=0;for(let i=0;i<60;i++)update(1/60);assert.ok(p.y>y+1);
 `));
 test('mobile UI renders mission, pause, cargo and debrief states',()=>mobile()(`
  TOUCH.render();assert.equal(node('m-title').textContent,'RESCUE RAIDERS');emit('m-primary','click');
@@ -81,4 +81,16 @@ test('captured instant-action buttons remain enabled through pointer release',()
  emit('touch-missile','pointerup',6);TOUCH.render();assert.equal(node('touch-missile').disabled,true);
  G.helis[0].cdMis=0;TOUCH.render();emit('touch-missile','pointerdown',7);
  assert.equal(G.missiles.length,2);
+`));
+test('mobile difficulty and training selection configure the next sortie',()=>mobile()(`
+ node('m-options').children[0].dispatchEvent({type:'click'});emit('m-primary','click');
+ assert.equal(G.difficulty,'recruit');assert.equal(G.funds,450);
+ G.state='menu';emit('m-tutorial','click');assert.ok(G.tutorial);TOUCH.render();
+ assert.equal(node('m-training').hidden,false);assert.ok(node('m-training').textContent.startsWith('1/4'));
+`));
+test('mobile routine messages stay quiet while van ETA and reserve remain visible',()=>mobile()(`
+ emit('m-primary','click');buy(1,'INF');TOUCH.render();assert.equal(node('m-notice').hidden,true);
+ const v=spawnUnit(-1,'VAN');v.x=PLAYER_X+70+UT.VAN.spd*20;TOUCH.render();
+ assert.equal(node('m-van').textContent,'HQ breach ~0:20');assert.equal(node('m-van').hidden,false);
+ G.helis[0].fuel=0;G.helis[0].reserve=12;TOUCH.render();assert.ok(node('m-notice').textContent.includes('RESERVE 12s'));
 `));

@@ -116,11 +116,11 @@
     button.addEventListener('click',()=>{if(G.state!=='play')SETTINGS.difficulty=id;});
     el('m-options').append(button);difficultyButtons.push({button,id});
   }
-  const icons={INF:'M14 2h5v5h-5z M12 9h9v9h-3v6h-3v-6h-3z M20 10h9v3h-9z',TANK:'M2 17h30v6H2z M6 11h22v6H6z M12 6h12v5H12z M21 7h12v3H21z',AA:'M2 17h30v6H2z M8 12h17v5H8z M14 12l9-11 3 2-9 11z M20 12l9-11 3 2-9 11z',VAN:'M2 8h22v11H2z M24 12h7v7h-7z M6 19h5v5H6z M23 19h5v5h-5z'};
+  const icons={ENG:'M12 2h9v3h3v3H9V5h3z M12 10h9v9h-3v5h-3v-5h-3z M23 11h8v3h-8z',INF:'M14 2h5v5h-5z M12 9h9v9h-3v6h-3v-6h-3z M20 10h9v3h-9z',TANK:'M2 17h30v6H2z M6 11h22v6H6z M12 6h12v5H12z M21 7h12v3H21z',AA:'M2 17h30v6H2z M8 12h17v5H8z M14 12l9-11 3 2-9 11z M20 12l9-11 3 2-9 11z',VAN:'M2 8h22v11H2z M24 12h7v7h-7z M6 19h5v5H6z M23 19h5v5h-5z'};
   const unitButtons=[];
-  for(const [type,name] of [['INF','Infantry'],['TANK','Tank'],['AA','AA truck'],['VAN','Demo van']]){
+  for(const [type,name] of [['INF','Infantry'],['TANK','Tank'],['AA','AA truck'],['VAN','Demo van'],['ENG','Engineer']]){
     const button=document.createElement('button');button.type='button';
-    button.innerHTML=`<svg viewBox="0 0 34 26" aria-hidden="true"><path d="${icons[type]}"/></svg>${name}<small></small>`;
+    button.innerHTML=`<svg viewBox="0 0 34 26" aria-hidden="true"><path d="${icons[type]||icons.INF}"/></svg>${name}<small></small>`;
     button.setAttribute('aria-label',`Deploy ${name}`);
     button.addEventListener('click',()=>{
       if(!tray||portrait||G.state!=='play')return;unlock();const before=G.units.length;buy(1,type);
@@ -144,17 +144,19 @@
   function drawRadar(){
     const r=radar,mx=x=>x/WORLD*340;r.clearRect(0,0,340,74);
     r.strokeStyle='#284a50';r.lineWidth=1;for(let x=0;x<340;x+=56)r.strokeRect(x,0,56,74);
+    for(const t of G.turrets){r.fillStyle=t.side===1?'#72d7c0':t.side===-1?'#f48277':'#8b959e';r.fillRect(mx(t.x)-2,64,4,5);}
     for(const b of G.bunkers){const x=mx(b.x);r.fillStyle=b.owner===1?'#7cd6b0':'#fa8278';
       r.fillRect(x-3,60,6,7);
       if(!b.balloonDead&&!b.cableBroken){r.fillRect(x,16,1,43);r.beginPath();r.arc(x,13,3,0,7);r.fill();}
       if(b.owner===1){r.fillRect(x+5,56,7,2);r.fillRect(x+7,54,2,6);}
     }
-    for(const u of G.units){const x=mx(u.x);r.fillStyle=u.side===1?'#76cbbb':'#f98477';
+    for(const u of G.units){if(radarJammed()&&u.side!==1)continue;const x=mx(u.x);r.fillStyle=u.side===1?'#76cbbb':'#f98477';
       if(u.type==='VAN'){r.globalAlpha=.65+.35*Math.sin(G.anim*8)**2;r.beginPath();r.moveTo(x+u.side*6,58);r.lineTo(x-u.side*4,52);r.lineTo(x-u.side*4,64);r.closePath();r.fill();r.globalAlpha=1;}
       else r.fillRect(x-1,61,3,3);
     }
-    for(const h of G.helis)if(!h.dead){const x=mx(h.x),y=clamp(h.y/GROUND*56,5,56);
+    for(const h of G.helis)if(!h.dead&&(!radarJammed()||h.side===1)){const x=mx(h.x),y=clamp(h.y/GROUND*56,5,56);
       r.strokeStyle=h.side===1?'#fff':'#ff9682';r.beginPath();r.arc(x,y,4,0,7);r.moveTo(x-7,y);r.lineTo(x+7,y);r.stroke();}
+    if(radarJammed()){r.fillStyle='#ffd070';r.font='bold 11px monospace';r.fillText('JAMMED',140,12);}
     r.strokeStyle='#cbe7de88';r.strokeRect(mx(G.camX),1,W/WORLD*340,71);
   }
   function text(id,value){const node=el(id);if(node.textContent!==value)node.textContent=value;}
@@ -187,9 +189,9 @@
     el('touch-flare').querySelector('small').textContent=`${Math.floor(p.flares)}`;
     el('touch-missile').disabled=(p.mis<1||p.cdMis>0)&&!owners.has(el('touch-missile'));
     el('touch-flare').disabled=p.flares<1&&!owners.has(el('touch-flare'));
-    const troops=G.units.filter(u=>u.type==='INF'&&u.side===1&&Math.abs(u.x-p.x)<115).length;
-    el('touch-cargo').hidden=p.y<GROUND-130||(!p.cargo&&!troops);
-    text('touch-cargo',p.cargo?`Drop ${p.cargo} troops`:`Board ${Math.min(4,troops)} troops`);
+    const troops=G.units.filter(u=>['INF','ENG'].includes(u.type)&&u.side===1&&Math.abs(u.x-p.x)<115).length;
+    el('touch-cargo').hidden=!p.cargo&&(p.y<GROUND-130||!troops);
+    text('touch-cargo',p.cargo?(p.y<GROUND-130?'Parachute 1':`Drop ${p.cargo} troops`):`Board ${Math.min(4,troops)} troops`);
     el('cancel-bomb').hidden=!G.bombAiming;
     let notice='',danger=false;
     if(p.dead)notice=`Helicopter down · ${Math.max(0,Math.ceil(p.respawn))}s`;

@@ -31,7 +31,7 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 | **`Esc`** | Cancel a held bomb preview |
 | **`M`** | AIM Heat-Seeking Missiles (Air & Armor) |
 | **`C`** | Thermal Flare Decoys (Diverts Incoming Missiles) |
-| **`E`** | Troop Bay: Hover low near infantry to board (up to 4), or hover near bunkers to deploy |
+| **`E`** | Troop Bay: Board up to 4 infantry/engineers low; deploy all low or parachute one per press aloft |
 
 ### Tactical Command & Interface
 | Key / Input | Action |
@@ -40,6 +40,7 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 | **`2`** | Deploy Battle Tank ($120) — Heavy armor & cannon firepower |
 | **`3`** | Deploy AA Truck ($160) — Long-range anti-aircraft flak missiles |
 | **`4`** | Deploy Demo Van ($250) — Strategic objective unit (1 max) |
+| **`5`** | Deploy Engineer ($40) — Captures/rebuilds turrets and repairs friendly bunkers |
 | **`P`** | Tactical Pause Menu |
 | **Mouse Click on Radar** | Scan a sector for 2.5 seconds; flight input returns to your helicopter |
 | **Mouse Click on Dock** | Click any unit card at the bottom to purchase reinforcements |
@@ -54,7 +55,7 @@ Open the game on a touchscreen phone or tablet and rotate to landscape. Touch co
 - **FIRE:** Hold to shoot while steering with your other thumb.
 - **BOMB:** Hold to preview, release over the button to drop. Drag off the button or tap **Cancel bomb** to cancel.
 - **MISSILE / FLARE:** Tap to launch or deploy. Ammunition counts appear on the buttons.
-- **Troops:** A boarding/drop button appears when you are low enough and troops are available.
+- **Troops:** Board infantry or engineers while low. With cargo aboard, tap to deploy all while low or parachute one troop per tap aloft.
 - **UNITS:** Opens a reinforcement tray and pauses the battle. Choose units, then tap **Back to flight**.
 - **Radar:** Tap to scan a sector; moving the joystick restores tracking.
 - **Pause / rotation:** Rotating to portrait or leaving the page clears held controls and pauses. Return to landscape and resume explicitly.
@@ -126,3 +127,11 @@ node --test tests/*.cjs
 ```
 
 The game pauses when its window loses focus. Graphics include terrain-dependent rotor wash (dust over dirt, clippings over grass), vehicle road dust, wind- and rotor-driven grass movement, drifting smoke, navigation lights, muzzle illumination, and softened ground shadows. Vehicle wrecks remain for 75 seconds (up to 24 at once), with smoke during their first 20 seconds; ground scorch marks fade over 60 seconds. These effects are cosmetic and do not block movement.
+
+## Combined-arms defenses and airborne insertions
+
+- **Engineers ($40 / key 5):** Approach a turret to capture it in 3 uncontested seconds, then repair it at 20 HP/second. Nearby enemy troops interrupt capture. Engineers repair friendly manned bunkers at 12 HP/second. Airlifting preserves their role and health. Both commanders can deploy engineers.
+- **Turrets:** Five neutral emplacements start as wrecks. Captured guns engage aircraft and ground units; gunfire, bombs, missiles, and tank shells can destroy them. Destroyed turrets become neutral and can be rebuilt.
+- **Garrisons:** Bunkers start with three defenders, shown by three ownership-colored pips. Their guns engage ground units except tanks. Damage removes defenders; zero health neutralizes the bunker and disables its balloon and forward service. Three infantry capture it; additional friendly infantry can replenish depleted garrisons.
+- **Paratroopers:** Above the low deployment band, each troop-button press drops one passenger under a parachute. Wind drifts them during descent; they join ground forces on landing and can be hit while airborne. Low deployment still unloads the whole bay. There is no random parachute failure.
+- **Radar jamming:** A hostile Van within 1,100 world units horizontally of your helicopter hides enemy mobile radar contacts and displays JAMMED on desktop and mobile. Friendly contacts, fixed landmarks, and safety warnings remain available. Leaving range or destroying the Van restores contacts immediately. Your Van applies the same jamming rule to the opposing side; the computer commander does not depend on radar to make decisions.

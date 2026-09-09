@@ -94,3 +94,10 @@ test('mobile routine messages stay quiet while van ETA and reserve remain visibl
  assert.equal(node('m-van').textContent,'HQ breach ~0:20');assert.equal(node('m-van').hidden,false);
  G.helis[0].fuel=0;G.helis[0].reserve=12;TOUCH.render();assert.ok(node('m-notice').textContent.includes('RESERVE 12s'));
 `));
+test('mobile engineers can be bought and passengers parachuted at altitude',()=>mobile()(`
+ emit('m-primary','click');emit('m-units','click');
+ const buttons=node('m-unit-list').children;assert.equal(buttons.length,5);
+ buttons[4].dispatchEvent({type:'click'});assert.equal(G.units[0].type,'ENG');
+ const p=G.helis[0];p.cargo=2;p.y=300;G.paused=false;TOUCH.render();
+ assert.equal(node('touch-cargo').hidden,false);assert.equal(node('touch-cargo').textContent,'Parachute 1');
+`));

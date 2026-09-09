@@ -40,6 +40,8 @@ const DIFFICULTIES={
 const SETTINGS={difficulty:'normal'};
 
 const UT={
+  ENG :{hp:28, spd:42, rng:180, dmg:4, cd:.8, w:12,h:16,cost:40},
+  TURRET:{h:30,w:38},BUNKER:{h:32,w:100},
   INF :{hp:22, spd:44, rng:250, dmg:6,  cd:.55, w:10,h:16, cost:20 },
   TANK:{hp:130,spd:30, rng:430, dmg:32, cd:2.3, w:40,h:15, cost:120},
   AA  :{hp:64, spd:26, rng:900, dmg:46, cd:3.6, w:36,h:13, cost:160},
@@ -52,7 +54,7 @@ const rnd=(a,b)=>a+Math.random()*(b-a);
 const hash=n=>{const s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s);};
 
 // ============================================================ ASSETS
-const SPR={},UNIT_SPR={INF:'soldier',TANK:'tank',AA:'aa',VAN:'van'};
+const SPR={},UNIT_SPR={ENG:'soldier',INF:'soldier',TANK:'tank',AA:'aa',VAN:'van'};
 const SPR_CFG={
   heli:{w:130,face:-1},tank:{w:95,face:1},aa:{w:110,face:-1},van:{w:100,face:1},
   soldier:{w:30,face:1},balloon:{w:120,face:1},bunker:{w:110,face:1},hq:{w:300,face:1}
@@ -152,14 +154,15 @@ function newGame(){
     lives:3,score:0,kills:0,
     helis:[mkHeli(1),mkHeli(-1)],
     units:[],bullets:[],shells:[],bombs:[],missiles:[],flares:[],decals:[],
+    turrets:[1300,2900,4550,6100,7700].map(x=>({x,y:GROUND-22,type:'TURRET',side:0,hp:0,maxhp:100,cd:0})),paratroopers:[],
     parts:[],msgs:[],wrecks:[],bombAiming:false,
     bunkers:BUNKER_XS.map(x=>({
-      x,owner:-1,capPulse:0,
+      x,y:GROUND-20,type:'BUNKER',owner:-1,side:-1,hp:90,maxhp:90,garrison:3,cd:2,capPulse:0,
       balloonHp:40,balloonMax:40,balloonDead:false,balloonRespawn:0,
       cableHp:30,cableBroken:false
     })),
     camX:0,shake:0,flash:0,endMsg:'',
-    stats:{deployed:{INF:0,TANK:0,AA:0,VAN:0},kills:0,bunkersCap:0,helisLost:0,cablesSevered:0},
+    stats:{deployed:{ENG:0,INF:0,TANK:0,AA:0,VAN:0},kills:0,bunkersCap:0,helisLost:0,cablesSevered:0},
     cableWarning:0,
     cautionTimer:0,scanTimer:0,
     bannerAlert:null,
@@ -171,7 +174,7 @@ function mkHeli(side){
   return{side,x:side>0?PLAYER_X+140:ENEMY_X-140,y:300,vx:0,vy:0,dir:side,
     hp:100,maxhp:100,dead:false,respawn:0,
     cdGun:0,cdBomb:0,cdMis:0,cableCd:0,
-    bombs:8,mis:4,flares:3,cargo:0,seed:Math.random()*10,
+    bombs:8,mis:4,flares:3,cargo:0,cargoUnits:[],seed:Math.random()*10,
     aiT:0,fuel:100,reserve:RESERVE_SECONDS,washTimer:0};
 }
 
@@ -187,7 +190,7 @@ function vanThreat(){
 }
 function formatETA(seconds){const t=Math.ceil(seconds);return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
 function startTutorial(){
-  newGame();G.state='play';G.tutorial={step:0,bombed:false};G.difficulty='recruit';
+  newGame();G.turrets=[];G.state='play';G.tutorial={step:0,bombed:false};G.difficulty='recruit';
   G.helis[1].dead=true;G.helis[1].respawn=1e9;
   G.bunkers=[{x:1100,owner:0,capPulse:0,balloonHp:40,balloonMax:40,balloonDead:true,
     balloonRespawn:1e9,cableHp:30,cableBroken:true}];
@@ -258,6 +261,7 @@ function onKey(code){
   if(code==='Digit2')buy(1,'TANK');
   if(code==='Digit3')buy(1,'AA');
   if(code==='Digit4')buy(1,'VAN');
+  if(code==='Digit5')buy(1,'ENG');
   if(p&&!p.dead&&code==='KeyE')troopTransfer(p);
   if(p&&!p.dead&&code==='KeyC'){
     if(p.flares>=1){
@@ -361,19 +365,88 @@ function spawnUnit(side,type){
   return u;
 }
 function troopTransfer(p){
-  if(p.y<GROUND-130){SFX.deny();msg('HOVER LOWER TO LOAD/DROP TROOPS','#ffb84d');return;}
   if(p.cargo>0){
-    for(let i=0;i<p.cargo;i++){
-      const st=UT.INF;
-      G.units.push({type:'INF',side:1,x:p.x+(i-1.5)*14,dir:1,hp:st.hp,maxhp:st.hp,cd:1,phase:0,flash:0});
+    const air=p.y<GROUND-130, count=air?1:p.cargo;
+    for(let i=0;i<count;i++){
+      const saved=(p.cargoUnits||[]).shift(),type=saved?saved.type:'INF';
+      const u=spawnUnit(p.side,type);u.x=clamp(p.x+(i-(count-1)/2)*14,60,WORLD-60);
+      if(saved)u.hp=saved.hp;
+      if(air){G.units.splice(G.units.indexOf(u),1);u.y=p.y+20;G.paratroopers.push(u);}
     }
-    msg(p.cargo+' TROOPS DEPLOYED TO GROUND','#4db2ff','routine');p.cargo=0;SFX.blip();
+    p.cargo-=count;SFX.blip();
   }else{
-    const near=G.units.filter(u=>u.type==='INF'&&u.side===1&&Math.abs(u.x-p.x)<115)
-                      .sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x)).slice(0,4);
-    if(!near.length){SFX.deny();msg('NO FRIENDLY INFANTRY NEARBY','#ffb84d');return;}
-    near.forEach(u=>{G.units.splice(G.units.indexOf(u),1);});
-    p.cargo=near.length;msg('TROOPS ABOARD ('+near.length+'/4)','#4db2ff','routine');SFX.blip();
+    if(p.y<GROUND-130){SFX.deny();return;}
+    const near=G.units.filter(u=>['INF','ENG'].includes(u.type)&&u.side===p.side&&Math.abs(u.x-p.x)<115)
+      .sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x)).slice(0,4);
+    if(!near.length){SFX.deny();return;}
+    p.cargoUnits=near.map(u=>({type:u.type,hp:u.hp}));
+    near.forEach(u=>G.units.splice(G.units.indexOf(u),1));p.cargo=near.length;SFX.blip();
+  }
+}
+function radarJammed(side=1){
+  const h=G.helis.find(h=>h.side===side);
+  return !!h&&!h.dead&&G.units.some(u=>u.type==='VAN'&&u.side!==side&&Math.abs(u.x-h.x)<1100);
+}
+function emplacements(){return [...G.turrets,...G.bunkers.filter(b=>b.garrison>0)];}
+function hurtEmplacement(t,d){
+  t.hp=Math.max(0,t.hp-d);
+  if(t.type==='BUNKER')t.garrison=Math.ceil(t.hp/30);
+  if(t.hp===0){t.side=0;if(t.type==='BUNKER'){t.owner=0;t.balloonDead=true;t.cableBroken=true;}}
+}
+function hitEmplacement(x,y,side,d){
+  const t=emplacements().find(t=>t.hp>0&&t.side!==side&&Math.abs(t.x-x)<UT[t.type].w/2&&Math.abs(y-t.y)<24);
+  if(t){hurtEmplacement(t,d);return true;}return false;
+}
+function engineerWork(u,dt){
+  const t=G.turrets.find(t=>Math.abs(t.x-u.x)<65&&(t.side!==u.side||t.hp<t.maxhp));
+  if(t){
+    if(t.side!==u.side){
+      if(G.units.some(o=>o.side!==u.side&&Math.abs(o.x-t.x)<90)){u.work=0;return false;}
+      u.work=(u.work||0)+dt;
+      if(u.work>=3){t.side=u.side;t.hp=Math.max(30,t.hp);u.work=0;}
+    }else t.hp=Math.min(t.maxhp,t.hp+20*dt);
+    return true;
+  }
+  const b=G.bunkers.find(b=>b.owner===u.side&&b.garrison>0&&b.hp<90&&Math.abs(b.x-u.x)<65);
+  if(b){b.hp=Math.min(90,b.hp+12*dt);b.garrison=Math.ceil(b.hp/30);return true;}
+  u.work=0;return false;
+}
+function updateEmplacements(dt){
+  for(const t of emplacements()){
+    if(t.hp<=0||!t.side)continue;t.cd-=dt;
+    const target=(t.type==='TURRET'?nearestAirTarget(t.x,t.y,t.side,650):null)||
+      G.units.filter(u=>u.side!==t.side&&(t.type==='TURRET'||u.type!=='TANK'))
+        .find(u=>Math.abs(u.x-t.x)<420);
+    if(target&&t.cd<=0){
+      t.cd=t.type==='TURRET'?.65:1.1;
+      const dx=target.x-t.x,dy=(target.y||GROUND-10)-t.y,d=Math.hypot(dx,dy)||1;
+      G.bullets.push({x:t.x,y:t.y,vx:dx/d*760,vy:dy/d*760,life:1,side:t.side,dmg:8});
+    }
+  }
+  for(const u of [...G.paratroopers]){
+    u.y+=55*dt;u.x=clamp(u.x+windAt(G.time)*dt,60,WORLD-60);
+    if(u.y>=GROUND){delete u.y;G.paratroopers.splice(G.paratroopers.indexOf(u),1);G.units.push(u);}
+  }
+}
+function drawEmplacements(){
+  for(const t of G.turrets){
+    const x=t.x-G.camX;if(!onScreen(t.x))continue;
+    cx.fillStyle=t.hp>0?'#66716a':'#494b48';
+    cx.fillRect(x-20,GROUND-10,40,10);cx.fillRect(x-12,GROUND-25,24,15);
+    cx.save();cx.translate(x,GROUND-24);cx.rotate(t.side===-1?-2.6:-.55);cx.fillRect(0,-3,30,6);cx.restore();
+    cx.fillStyle='#101820';cx.fillRect(x-20,GROUND-39,40,4);
+    cx.fillStyle=t.side===1?'#72d7c0':t.side===-1?'#f48277':'#8b959e';cx.fillRect(x-20,GROUND-39,40*t.hp/t.maxhp,4);
+  }
+  for(const b of G.bunkers){
+    const x=b.x-G.camX;if(!onScreen(b.x))continue;
+    for(let i=0;i<3;i++){cx.fillStyle=i<(b.garrison||0)?(b.owner===1?'#72d7c0':'#f48277'):'#39434a';cx.fillRect(x-12+i*9,GROUND-48,6,4);}
+    if(b.garrison){cx.fillStyle='#222b30';cx.fillRect(x-38,GROUND-23,76,5);}
+  }
+  for(const u of G.paratroopers){
+    const x=u.x-G.camX;cx.strokeStyle=u.side===1?'#90ddd0':'#eaa397';cx.fillStyle=u.side===1?'#507d72':'#88635a';
+    cx.beginPath();cx.arc(x,u.y-25,20,Math.PI,0);cx.closePath();cx.fill();
+    cx.beginPath();cx.moveTo(x-20,u.y-25);cx.lineTo(x,u.y);cx.lineTo(x+20,u.y-25);cx.stroke();
+    drawSprite('soldier',u.side,x,u.y,12,false,0,true);
   }
 }
 function msg(text,color,kind='event'){G.msgs.unshift({text,color:color||'#fff',age:0,kind});if(G.msgs.length>4)G.msgs.pop();}
@@ -430,7 +503,7 @@ function hitBalloonOrCable(x,y,side,dmg){
 }
 function nearestGroundTarget(x,y,side,maxD){
   let best=null,bd=maxD;
-  for(const u of G.units)if(u.side!==side){
+  for(const u of [...G.units,...emplacements().filter(t=>t.hp>0)])if(u.side!==side){
     const d=Math.hypot(u.x-x,(GROUND-UT[u.type].h/2)-y);if(d<bd){bd=d;best=u;}
   }
   return best;
@@ -476,11 +549,15 @@ function explode(x,y,r,dmg,side){
     if(G.decals.length>30)G.decals.shift();
   }
   if(dmg<=0)return;
+  for(const u of [...G.paratroopers])if(u.side!==side&&Math.hypot(u.x-x,u.y-y)<r+12){
+    u.hp-=dmg;if(u.hp<=0)G.paratroopers.splice(G.paratroopers.indexOf(u),1);
+  }
   for(const u of [...G.units]){
     if(u.side===side)continue;
     if(Math.abs(u.x-x)<r+UT[u.type].w/2&&Math.abs((GROUND-UT[u.type].h)-y)<r+30)
       hurtUnit(u,dmg);
   }
+  for(const t of emplacements())if(t.hp>0&&t.side!==side&&Math.hypot(t.x-x,t.y-y)<r+30)hurtEmplacement(t,dmg);
   for(const h of G.helis){
     if(h.dead||h.side===side)continue;
     if(Math.hypot(h.x-x,h.y-y)<r+22)hurtHeli(h,dmg*.8,{x,y});
@@ -496,7 +573,7 @@ function killUnit(u){
   const i=G.units.indexOf(u);if(i>=0)G.units.splice(i,1);
   if(u.side<0){G.kills++;if(G.stats)G.stats.kills++;G.score+=UT[u.type].cost;}
   explodeQuiet(u.x,GROUND-10,u.type==='INF'?26:44);
-  if(u.type!=='INF'){
+  if(!['INF','ENG'].includes(u.type)){
     G.wrecks.push({x:u.x,type:u.type,side:u.side,life:75,smokeT:0});
     if(G.wrecks.length>24)G.wrecks.shift();
   }
@@ -573,7 +650,7 @@ function update(dt){
         if(h.side>0&&G.lives<=0)continue;
         if(h.side===1&&G.tutorial){startTutorial();return;}
         Object.assign(h,{dead:false,hp:h.maxhp,x:h.side>0?PLAYER_X+140:ENEMY_X-140,
-          y:300,vx:0,vy:0,bombs:8,mis:4,flares:3,cargo:0,fuel:100,reserve:RESERVE_SECONDS,rearming:false,service:null,cdGun:0,cdBomb:0,cdMis:0});
+          y:300,vx:0,vy:0,bombs:8,mis:4,flares:3,cargo:0,cargoUnits:[],fuel:100,reserve:RESERVE_SECONDS,rearming:false,service:null,cdGun:0,cdBomb:0,cdMis:0});
       }
       continue;
     }
@@ -657,6 +734,7 @@ function update(dt){
     }
   }else{G.cautionTimer=0.8;}
 
+  updateEmplacements(dt);
   updateUnits(dt);
   updateProjectiles(dt);
   updateCapture(dt);
@@ -668,7 +746,7 @@ function update(dt){
 
   // balloon respawns
   for(const b of G.bunkers){
-    if(b.balloonDead){
+    if(b.balloonDead&&b.owner!==0){
       b.balloonRespawn-=dt;
       if(b.balloonRespawn<=0){
         b.balloonDead=false;b.cableBroken=false;b.balloonHp=b.balloonMax;b.cableHp=30;
@@ -814,6 +892,7 @@ function updateUnits(dt){
     const st=UT[u.type];
     u.cd-=dt;u.phase+=dt;u.flash=Math.max(0,u.flash-dt);
     const dir=u.side;
+    if(u.type==='ENG'&&engineerWork(u,dt))continue;
     // targets
     const gt=nearestGroundTarget(u.x,GROUND,u.side,st.rng);
     const et=nearestAirTarget(u.x,GROUND-UT[u.type].h,u.side,st.rng+200);
@@ -881,6 +960,12 @@ function updateProjectiles(dt){
       if(h.dead||h.side===b.side)continue;
       if(Math.abs(b.x-h.x)<26&&Math.abs(b.y-h.y)<12){hurtHeli(h,b.dmg,{x:b.x-b.vx*.15,y:b.y-b.vy*.15});hit=true;break;}
     }
+    if(!hit)for(const u of G.paratroopers){
+      if(u.side!==b.side&&Math.abs(b.x-u.x)<10&&Math.abs(b.y-u.y)<18){
+        u.hp-=b.dmg;if(u.hp<=0)G.paratroopers.splice(G.paratroopers.indexOf(u),1);hit=true;break;
+      }
+    }
+    if(!hit)hit=hitEmplacement(b.x,b.y,b.side,b.dmg);
     if(!hit)hit=hitBalloonOrCable(b.x,b.y,b.side,b.dmg);
     if(hit||b.life<=0)G.bullets.splice(i,1);
   }
@@ -931,7 +1016,7 @@ function updateProjectiles(dt){
       }
     }
     const t=m.target;
-    const gone=!t||(t.dead)||(!G.units.includes(t)&&!G.helis.includes(t)&&!G.flares.includes(t));
+    const gone=!t||(t.dead)||(!G.units.includes(t)&&!G.helis.includes(t)&&!G.flares.includes(t)&&!emplacements().includes(t))||!!t&&t.hp===0;
     if(gone)m.target=null;
     if(m.target){
       const dx=m.target.x-m.x,dy=(m.target.y||GROUND-10)-m.y;
@@ -966,11 +1051,15 @@ function updateProjectiles(dt){
 function updateCapture(dt){
   for(const b of G.bunkers){
     const near=G.units.filter(u=>u.type==='INF'&&Math.abs(u.x-b.x)<70);
+    if(b.garrison>0&&b.garrison<3){
+      const recruit=near.find(u=>u.side===b.owner);
+      if(recruit){b.hp=Math.min(90,b.hp+30);b.garrison=Math.ceil(b.hp/30);G.units.splice(G.units.indexOf(recruit),1);near.splice(near.indexOf(recruit),1);}
+    }
     for(const side of [1,-1]){
       if(b.owner===side)continue;
       const cnt=near.filter(u=>u.side===side).length;
       if(cnt>=CAPTURE_N){
-        b.owner=side;b.capPulse=1.2;
+        b.owner=side;b.side=side;b.garrison=3;b.hp=90;b.maxhp=90;b.type='BUNKER';b.y=GROUND-20;b.cd=1;b.capPulse=1.2;
         b.balloonDead=false;b.cableBroken=false;b.balloonHp=b.balloonMax;b.cableHp=30;b.balloonRespawn=0;
         let removed=0;
         for(let i=G.units.length-1;i>=0&&removed<3;i--){
@@ -995,7 +1084,8 @@ function aiDecide(){
   if(G.tutorial)return;
   const mine=G.units.filter(u=>u.side<0);
   const n=t=>mine.filter(u=>u.type===t).length;
-  if(n('INF')<3)buy(-1,'INF');
+  if(!n('ENG')&&G.time>20&&G.turrets.some(t=>t.side!==-1||t.hp<100))buy(-1,'ENG');
+  else if(n('INF')<3)buy(-1,'INF');
   else if(!n('AA')&&Math.random()<.85)buy(-1,'AA');
   else if(n('TANK')<1+Math.floor(G.time/140))buy(-1,'TANK');
   else if(n('INF')<7)buy(-1,'INF');
@@ -1028,6 +1118,7 @@ function render(){
   drawWrecks();
   drawBases();
   for(const b of G.bunkers)drawBunker(b);
+  drawEmplacements();
   for(const u of G.units)drawUnit(u);
   for(const h of G.helis)if(!h.dead)drawHeli(h);
   drawProjectiles();
@@ -1284,7 +1375,7 @@ function drawBunker(b){
   if(b.balloonDead){
     if(G.tutorial)return;
     cx.font='bold 9px monospace';cx.fillStyle='rgba(255,180,120,.9)';cx.textAlign='center';
-    cx.fillText('BALLOON RESPAWN: '+Math.ceil(b.balloonRespawn)+'s',x,GROUND-58);
+    cx.fillText(b.owner===0?'NEUTRAL • INSERT 3 TROOPS':'BALLOON RESPAWN: '+Math.ceil(b.balloonRespawn)+'s',x,GROUND-58);
   }else{
     const by=balloonY(b);
     drawSprite('balloon',b.owner,x,by,120,false,0,false);
@@ -1332,6 +1423,7 @@ function drawUnit(u){
     cx.fillStyle=gr;cx.fillRect(gx-30,gy-30,60,60);
     cx.restore();
   }
+  if(u.type==='ENG'){cx.fillStyle='#ffe09a';cx.fillRect(x-5,GROUND-22,10,4);if(u.work){cx.fillRect(x-10,GROUND-30,20*Math.min(1,u.work/3),3);}}
   // hp pip
   if(u.hp<u.maxhp){
     cx.fillStyle='#000a';cx.fillRect(x-12,GROUND-UT[u.type].h-16,24,3);
@@ -1742,15 +1834,16 @@ function drawHUD(){
     cx.strokeRect(dockX,dockY,dockW,dockH);
 
     cx.font='bold 10px monospace';cx.fillStyle='#8ba3cb';cx.textAlign='left';
-    cx.fillText('TACTICAL REINFORCEMENT DOCK (PRESS 1-4 OR CLICK TO DEPLOY)',dockX+12,dockY-6);
+    cx.fillText('TACTICAL REINFORCEMENT DOCK (PRESS 1-5 OR CLICK TO DEPLOY)',dockX+12,dockY-6);
 
     const cards=[
       {key:'1',type:'INF',name:'INFANTRY',cost:20,sub:'Bunker Cap'},
       {key:'2',type:'TANK',name:'BATTLE TANK',cost:120,sub:'Heavy Shells'},
       {key:'3',type:'AA',name:'AA TRUCK',cost:160,sub:'Anti-Air'},
       {key:'4',type:'VAN',name:'DEMO VAN',cost:250,sub:'Win Objective'},
+      {key:'5',type:'ENG',name:'ENGINEER',cost:40,sub:'Repair / Capture'},
     ];
-    const cardW=146,cardH=50,cardGap=7;
+    const cardW=116,cardH=50,cardGap=7;
     cards.forEach((c,i)=>{
       const cx0=dockX+7+i*(cardW+cardGap),cy0=dockY+7;
       const isVan=c.type==='VAN';
@@ -1776,12 +1869,13 @@ function drawHUD(){
       cx.fillStyle=icCol;cx.strokeStyle=icCol;cx.lineWidth=1.2;
       const midX=iconBoxX+iconBoxW/2,midY=iconBoxY+iconBoxH/2;
       cx.save();cx.translate(midX,midY);cx.scale(1.4,1.15);cx.translate(-midX,-midY);
-      if(c.type==='INF'){
+      if(c.type==='INF'||c.type==='ENG'){
         cx.beginPath();cx.arc(midX,midY-4,2.5,0,Math.PI*2);cx.fill();
         cx.fillRect(midX-3,midY-1,6,6);
         cx.fillRect(midX-3.5,midY+5,2.5,4);
         cx.fillRect(midX+1,midY+5,2.5,4);
         cx.fillRect(midX+2,midY-3,4.5,2);
+        if(c.type==='ENG'){cx.fillStyle='#ffe09a';cx.fillRect(midX-4,midY-7,8,2);}
       }else if(c.type==='TANK'){
         cx.fillRect(midX-7,midY+2,14,4);
         cx.fillRect(midX-5,midY-2,10,4);
@@ -1843,8 +1937,10 @@ function drawHUD(){
     cx.fillStyle='#4db2ff';cx.textAlign='left';cx.fillText('BLUE HQ',rx+4,ry+rh-4);
     cx.fillStyle='#ff5548';cx.textAlign='right';cx.fillText('RED HQ',rx+rw-4,ry+rh-4);
 
+    if(radarJammed()){cx.fillStyle='#ffd070';cx.textAlign='center';cx.fillText('JAMMED',rx+rw/2,ry+12);}
     const mx=x=>rx+(x/WORLD)*rw;
 
+    for(const t of G.turrets){cx.fillStyle=t.side===1?'#72d7c0':t.side===-1?'#f48277':'#8b959e';cx.fillRect(mx(t.x)-2,ry+rh-7,4,5);}
     for(const b of G.bunkers){
       const bx=mx(b.x);
       const bCol=b.owner===1?'#4db2ff':b.owner===-1?'#ff5548':'#888888';
@@ -1862,6 +1958,7 @@ function drawHUD(){
     }
 
     for(const u of G.units){
+      if(radarJammed()&&u.side!==1)continue;
       const ux=mx(u.x);
       const uCol=u.side===1?'#4db2ff':'#ff5548';
       const uy=ry+rh-13;
@@ -1893,7 +1990,7 @@ function drawHUD(){
     }
 
     for(const h of G.helis){
-      if(h.dead)continue;
+      if(h.dead||(radarJammed()&&h.side!==1))continue;
       const hx=mx(h.x),hy=ry+clamp(h.y/GROUND*(rh-14),8,rh-9);
       const hCol=h.side===1?'#4db2ff':'#ff5548';
       cx.strokeStyle=hCol;cx.lineWidth=1.2;
@@ -2188,8 +2285,8 @@ function drawOverlays(){
     const pCheats=[
       'WASD / Arrows: Pitch & Altitude',
       'SPACE: Minigun   B: Bomb   M: Missile   C: Flares',
-      'E: Load / Drop Troops (Hover low near infantry or bunker)',
-      '1-4: Deploy Reinforcements (Infantry / Tank / AA / Van)',
+      'E: Board low / Drop troops low / Parachute one troop aloft',
+      '1-5: Deploy Infantry / Tank / AA / Van / Engineer',
       'Radar: Click minimap to jump camera view'
     ];
     pCheats.forEach((t,i)=>{
@@ -2255,7 +2352,7 @@ function drawOverlays(){
     const gridX=dx+40,gridY=dy+150,gridW=dw-80,cardW=(gridW-20)/2,cardH=68;
     const statsList=[
       {title:'HOSTILE CASUALTIES',val:(G.stats?G.stats.kills:G.kills)+' KILLS',sub:'Ground & Armor eliminated'},
-      {title:'REINFORCEMENTS DEPLOYED',val:(G.stats?(G.stats.deployed.INF+G.stats.deployed.TANK+G.stats.deployed.AA+G.stats.deployed.VAN):0)+' UNITS',sub:'Infantry & Armor deployed'},
+      {title:'REINFORCEMENTS DEPLOYED',val:(G.stats?(G.stats.deployed.ENG+G.stats.deployed.INF+G.stats.deployed.TANK+G.stats.deployed.AA+G.stats.deployed.VAN):0)+' UNITS',sub:'Infantry & Armor deployed'},
       {title:'BUNKERS SECURED',val:(G.stats?G.stats.bunkersCap:0)+' CAPTURED',sub:'Airspace defense balloons'},
       {title:'FLIGHT TIME & SCORE',val:Math.floor(G.time)+'s  |  '+G.score+' PTS',sub:'Combat duration & score'},
     ];

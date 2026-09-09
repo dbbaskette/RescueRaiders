@@ -170,3 +170,61 @@ test('training restarts after a helicopter loss rather than losing required carg
  startTutorial();G.tutorial.step=3;const p=G.helis[0];p.cargo=3;hurtHeli(p,100);
  p.respawn=0;update(.016);assert.equal(G.tutorial.step,0);assert.equal(G.helis[0].dead,false);
 `));
+test('engineers capture, repair, and rebuild turrets while enemy troops contest',()=>game()(`
+ const t=G.turrets[0],e=spawnUnit(1,'ENG');e.x=t.x;
+ const enemy=spawnUnit(-1,'INF');enemy.x=t.x;
+ engineerWork(e,4);assert.equal(t.side,0);killUnit(enemy);
+ engineerWork(e,3);assert.equal(t.side,1);assert.equal(t.hp,30);
+ engineerWork(e,4);assert.equal(t.hp,100);
+ hurtEmplacement(t,100);assert.equal(t.side,0);assert.equal(t.hp,0);
+ engineerWork(e,3);assert.equal(t.side,1);assert.equal(t.hp,30);
+`));
+test('garrison damage neutralizes service; infantry capture and replenish defenders',()=>game()(`
+ const b=G.bunkers[0];hurtEmplacement(b,35);assert.equal(b.garrison,2);
+ const e=spawnUnit(-1,'INF');e.x=b.x;updateCapture(.1);
+ assert.equal(b.garrison,3);assert.ok(!G.units.includes(e));
+ hurtEmplacement(b,100);assert.equal(b.owner,0);assert.equal(b.garrison,0);assert.ok(b.balloonDead);
+ for(let i=0;i<3;i++){const u=spawnUnit(1,'INF');u.x=b.x;}
+ updateCapture(.1);assert.equal(b.owner,1);assert.equal(b.garrison,3);assert.equal(b.hp,90);
+ hurtEmplacement(b,40);const eng=spawnUnit(1,'ENG');eng.x=b.x;engineerWork(eng,1);assert.equal(b.hp,62);
+`));
+test('turrets engage aircraft, bunkers spare tanks and explosions destroy defenses',()=>game()(`
+ const t=G.turrets[0];Object.assign(t,{side:1,hp:100});
+ Object.assign(G.helis[1],{x:t.x+100,y:400});updateEmplacements(.1);assert.ok(G.bullets.length);
+ G.bullets=[];const b=G.bunkers[0];b.cd=0;const tank=spawnUnit(1,'TANK');tank.x=b.x-100;
+ t.hp=0;updateEmplacements(.1);assert.equal(G.bullets.length,0);
+ const inf=spawnUnit(1,'INF');inf.x=b.x-100;updateEmplacements(.1);assert.ok(G.bullets.length);
+ explode(b.x,b.y,78,100,1);assert.equal(b.garrison,0);
+`));
+test('airlifting preserves engineer role and health; parachutes land exactly once',()=>game()(`
+ const p=G.helis[0];p.y=GROUND-30;const e=spawnUnit(1,'ENG');e.x=p.x;e.hp=15;
+ troopTransfer(p);assert.equal(p.cargo,1);p.y=300;troopTransfer(p);
+ assert.equal(p.cargo,0);assert.equal(G.paratroopers.length,1);assert.equal(G.units.length,0);
+ const u=G.paratroopers[0];const x=u.x;updateEmplacements(1);assert.ok(u.x>x);
+ updateEmplacements(10);assert.equal(G.paratroopers.length,0);assert.equal(G.units.length,1);
+ assert.equal(u.type,'ENG');assert.equal(u.hp,15);updateEmplacements(1);assert.equal(G.units.length,1);
+`));
+test('Van jamming follows range, allegiance, destruction and helicopter death',()=>game()(`
+ const p=G.helis[0],v=spawnUnit(-1,'VAN');v.x=p.x+1099;assert.equal(radarJammed(),true);
+ render();v.x=p.x+1101;assert.equal(radarJammed(),false);
+ v.x=p.x;v.side=1;assert.equal(radarJammed(),false);v.side=-1;
+ p.dead=true;assert.equal(radarJammed(),false);p.dead=false;killUnit(v);assert.equal(radarJammed(),false);
+`));
+test('new defenses, airborne passengers and engineer dock render together',()=>game()(`
+ G.state='play';G.camX=1000;const p=G.helis[0];p.x=1300;p.cargo=1;troopTransfer(p);
+ const e=spawnUnit(1,'ENG');e.x=1300;e.work=1.5;
+ Object.assign(G.turrets[0],{side:1,hp:50});render();
+ assert.ok(G.buttons.some(b=>b.id==='buy_ENG'));
+ startTutorial();assert.equal(G.turrets.length,0);
+`));
+test('neutralized bunker balloon stays disabled until infantry recapture',()=>game()(`
+ const b=G.bunkers[0];hurtEmplacement(b,100);update(1);
+ assert.equal(b.owner,0);assert.equal(b.balloonDead,true);
+`));
+test('missiles track emplacements and gunfire can hit descending troops',()=>game()(`
+ const t=G.turrets[0];t.side=-1;t.hp=100;
+ G.missiles.push(mkMissile(t.x,t.y,t,1));updateProjectiles(.016);assert.ok(t.hp<100);
+ const u=spawnUnit(-1,'INF');G.units.splice(G.units.indexOf(u),1);u.y=300;G.paratroopers.push(u);
+ G.bullets.push({x:u.x,y:300,vx:0,vy:0,life:1,side:1,dmg:30});updateProjectiles(.016);
+ assert.equal(G.paratroopers.length,0);
+`));

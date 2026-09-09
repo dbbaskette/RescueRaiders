@@ -31,7 +31,13 @@ const PLAYER_X=150,ENEMY_X=WORLD-150;
 const BUNKER_XS=[1850,3550,5250,6950];
 const CAPTURE_N=3;
 const GUN_CD=.11, FUEL_BURN=.28, LOW_FUEL=20;
-const BOMB_GRAVITY=480,BOMB_DRAG=.4,FORWARD_HP=.75;
+const BOMB_GRAVITY=480,BOMB_DRAG=.4,FORWARD_HP=.75,RESERVE_SECONDS=20;
+const DIFFICULTIES={
+  recruit:{name:'Recruit',funds:450,damage:.7,interval:6,income:18,vanTime:100},
+  normal:{name:'Normal',funds:300,damage:1,interval:4,income:22,vanTime:70},
+  veteran:{name:'Veteran',funds:220,damage:1.2,interval:3,income:27,vanTime:50}
+};
+const SETTINGS={difficulty:'normal'};
 
 const UT={
   INF :{hp:22, spd:44, rng:250, dmg:6,  cd:.55, w:10,h:16, cost:20 },
@@ -141,7 +147,8 @@ function newGame(){
   if(typeof TOUCH!=='undefined'&&TOUCH.reset)TOUCH.reset();
   G={
     state:'menu',paused:false,time:0,anim:0,
-    funds:300,eFunds:300,ecoT:0,aiT:4,
+    funds:DIFFICULTIES[SETTINGS.difficulty].funds,eFunds:300,ecoT:0,aiT:4,
+    difficulty:SETTINGS.difficulty,aiAccum:0,tutorial:null,damageEdges:{left:0,right:0,top:0,bottom:0},vanAlertLevel:0,
     lives:3,score:0,kills:0,
     helis:[mkHeli(1),mkHeli(-1)],
     units:[],bullets:[],shells:[],bombs:[],missiles:[],flares:[],decals:[],
@@ -165,7 +172,48 @@ function mkHeli(side){
     hp:100,maxhp:100,dead:false,respawn:0,
     cdGun:0,cdBomb:0,cdMis:0,cableCd:0,
     bombs:8,mis:4,flares:3,cargo:0,seed:Math.random()*10,
-    aiT:0,fuel:100,washTimer:0};
+    aiT:0,fuel:100,reserve:RESERVE_SECONDS,washTimer:0};
+}
+
+function enginePowered(h){return h.fuel>0||h.reserve>0;}
+function difficulty(){return DIFFICULTIES[G.difficulty];}
+function vanThreat(){
+  let best=null;
+  for(const van of G.units)if(van.side<0&&van.type==='VAN'){
+    const seconds=Math.max(0,(van.x-(PLAYER_X+70))/UT.VAN.spd);
+    if(!best||seconds<best.seconds)best={van,seconds,level:seconds<=15?2:seconds<=30?1:0};
+  }
+  return best;
+}
+function formatETA(seconds){const t=Math.ceil(seconds);return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
+function startTutorial(){
+  newGame();G.state='play';G.tutorial={step:0,bombed:false};G.difficulty='recruit';
+  G.helis[1].dead=true;G.helis[1].respawn=1e9;
+  G.bunkers=[{x:1100,owner:0,capPulse:0,balloonHp:40,balloonMax:40,balloonDead:true,
+    balloonRespawn:1e9,cableHp:30,cableBroken:true}];
+}
+function restartMission(){if(G.tutorial)startTutorial();else{newGame();G.state='play';}}
+function tutorialHint(){
+  if(!G.tutorial)return '';
+  return [
+    TOUCH.active?'1/4 · Fly right to the training marker':'1/4 · Fly right past 500m using WASD / arrows',
+    TOUCH.active?'2/4 · Hold BOMB, release to hit the ground':'2/4 · Hold B to aim, release to hit the ground',
+    TOUCH.active?'3/4 · Hover low near troops; tap Board':'3/4 · Hover low near troops; press E to board',
+    TOUCH.active?'4/4 · Drop troops at the marked bunker':'4/4 · Fly to the marked bunker; hover low and press E'
+  ][G.tutorial.step];
+}
+function updateTutorial(){
+  const t=G.tutorial,p=G.helis[0];if(!t||p.dead)return;
+  if(t.step===0&&p.x>=500){t.step=1;t.bombed=false;SFX.blip();}
+  else if(t.step===1&&t.bombed){
+    t.step=2;
+    for(let i=0;i<3;i++){const u=spawnUnit(1,'INF');u.x=clamp(p.x+(i-1)*20,60,WORLD-60);}
+    SFX.blip();
+  }else if(t.step===2&&p.cargo>=3){t.step=3;SFX.blip();}
+  else if(t.step===3&&G.bunkers[0].owner===1)endGame(true,'TRAINING COMPLETE — READY FOR A COMBAT SORTIE');
+}
+function cableIsUrgent(b){
+  const p=G.helis[0];return b.owner!==1&&!p.dead&&Math.abs(p.x-b.x)<200&&p.y>BALLOON_Y-30;
 }
 
 // ============================================================ INPUT & MOUSE
@@ -197,6 +245,8 @@ addEventListener('blur',()=>{
 
 function onKey(code){
   ac();
+  if(G.state==='menu'&&code==='KeyT'){startTutorial();return;}
+  if(G.state==='menu'&&['Digit1','Digit2','Digit3'].includes(code)){SETTINGS.difficulty=['recruit','normal','veteran'][Number(code.slice(-1))-1];return;}
   if(code==='Enter'){
     if(G.state==='menu'||G.state==='over'||G.state==='win'){newGame();G.state='play';SFX.blip();}
     return;
@@ -215,7 +265,7 @@ function onKey(code){
       for(let i=0;i<3;i++)
         G.flares.push({x:p.x,y:p.y+8,vx:-p.dir*rnd(130,230)+rnd(-40,40),vy:rnd(30,110),life:2.2});
       noise(.5,3000,.12);tone(1400,400,.3,'sawtooth',.05);
-      msg('FLARES DEPLOYED!','#ffd97a');
+      msg('FLARES DEPLOYED!','#ffd97a','routine');
     }else SFX.deny();
   }
   if(code==='Escape'){G.bombAiming=false;return;}
@@ -281,6 +331,7 @@ function emitGroundWash(x,strength){
 
 // ============================================================ SPAWNING / ECONOMY
 function buy(side,type){
+  if(G.tutorial){if(side===1)msg('TRAINING: USE THE PROVIDED TROOPS','#ffd97a');return;}
   const st=UT[type],f=side>0?'funds':'eFunds';
   if(type==='VAN'&&G.units.some(u=>u.side===side&&u.type==='VAN')){
     if(side>0){SFX.deny();msg('DEMO VAN ALREADY ACTIVE (1 MAX)','#ffb84d');}
@@ -295,7 +346,7 @@ function buy(side,type){
     SFX.cash();
     G.stats.deployed[type]++;
     G.spawnPings.push({type,time:2.5,x:PLAYER_X+40});
-    msg(type+' DEPLOYED FROM HQ','#8dff8d');
+    msg(type+' DEPLOYED FROM HQ','#8dff8d','routine');
   }
   spawnUnit(side,type);
 }
@@ -316,16 +367,16 @@ function troopTransfer(p){
       const st=UT.INF;
       G.units.push({type:'INF',side:1,x:p.x+(i-1.5)*14,dir:1,hp:st.hp,maxhp:st.hp,cd:1,phase:0,flash:0});
     }
-    msg(p.cargo+' TROOPS DEPLOYED TO GROUND','#4db2ff');p.cargo=0;SFX.blip();
+    msg(p.cargo+' TROOPS DEPLOYED TO GROUND','#4db2ff','routine');p.cargo=0;SFX.blip();
   }else{
     const near=G.units.filter(u=>u.type==='INF'&&u.side===1&&Math.abs(u.x-p.x)<115)
                       .sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x)).slice(0,4);
     if(!near.length){SFX.deny();msg('NO FRIENDLY INFANTRY NEARBY','#ffb84d');return;}
     near.forEach(u=>{G.units.splice(G.units.indexOf(u),1);});
-    p.cargo=near.length;msg('TROOPS ABOARD ('+near.length+'/4)','#4db2ff');SFX.blip();
+    p.cargo=near.length;msg('TROOPS ABOARD ('+near.length+'/4)','#4db2ff','routine');SFX.blip();
   }
 }
-function msg(text,color){G.msgs.unshift({text,color:color||'#fff',age:0});if(G.msgs.length>4)G.msgs.pop();}
+function msg(text,color,kind='event'){G.msgs.unshift({text,color:color||'#fff',age:0,kind});if(G.msgs.length>4)G.msgs.pop();}
 
 // ============================================================ COMBAT HELPERS
 function mkMissile(x,y,target,side){
@@ -432,7 +483,7 @@ function explode(x,y,r,dmg,side){
   }
   for(const h of G.helis){
     if(h.dead||h.side===side)continue;
-    if(Math.hypot(h.x-x,h.y-y)<r+22)hurtHeli(h,dmg*.8);
+    if(Math.hypot(h.x-x,h.y-y)<r+22)hurtHeli(h,dmg*.8,{x,y});
   }
 }
 function hurtUnit(u,d){
@@ -458,8 +509,14 @@ function explodeQuiet(x,y,r){
     G.parts.push({x:x+rnd(-8,8),y,vx:rnd(-25,25),vy:rnd(-60,-15),life:rnd(.6,1.1),c:'#555',s:rnd(4,8),g:-.12,wind:1});
   G.parts.push({x,y,ring:true,r:6,vr:240,life:.26,c:'#ffd8a0'});
 }
-function hurtHeli(h,d){
+function hurtHeli(h,d,source){
   if(h.dead)return;
+  if(h.side===1&&source){
+    d*=difficulty().damage;
+    const dx=source.x-h.x,dy=source.y-h.y;
+    const edge=Math.abs(dx)>=Math.abs(dy)?(dx<0?'left':'right'):(dy<0?'top':'bottom');
+    G.damageEdges[edge]=.65;
+  }
   h.hp-=d;
   G.parts.push({x:h.x+rnd(-10,10),y:h.y,vx:rnd(-60,60),vy:rnd(-60,60),life:.3,c:'#ffd070',s:3,g:0});
   if(h.hp<=0){
@@ -484,12 +541,13 @@ function hurtHeli(h,d){
 // ============================================================ UPDATE
 function update(dt){
   G.time+=dt;
+  for(const edge in G.damageEdges)G.damageEdges[edge]=Math.max(0,G.damageEdges[edge]-dt);
   // economy
   G.ecoT+=dt;
   if(G.ecoT>=3){
     G.ecoT-=3;
     G.funds+=25;
-    G.eFunds+=Math.round(22*(1+G.time/300));
+    G.eFunds+=Math.round(difficulty().income*(1+G.time/300));
     G.score+=2;
   }
   // shake decay
@@ -513,8 +571,9 @@ function update(dt){
       h.respawn-=dt;
       if(h.respawn<=0){
         if(h.side>0&&G.lives<=0)continue;
+        if(h.side===1&&G.tutorial){startTutorial();return;}
         Object.assign(h,{dead:false,hp:h.maxhp,x:h.side>0?PLAYER_X+140:ENEMY_X-140,
-          y:300,vx:0,vy:0,bombs:8,mis:4,flares:3,cargo:0,fuel:100,rearming:false,service:null,cdGun:0,cdBomb:0,cdMis:0});
+          y:300,vx:0,vy:0,bombs:8,mis:4,flares:3,cargo:0,fuel:100,reserve:RESERVE_SECONDS,rearming:false,service:null,cdGun:0,cdBomb:0,cdMis:0});
       }
       continue;
     }
@@ -523,7 +582,7 @@ function update(dt){
     // physics common
     h.vy+=60*dt;
     h.vx*=Math.exp(-2.1*dt);h.vy*=Math.exp(-1.6*dt);
-    h.x=clamp(h.x+h.vx*dt,30,WORLD-30);
+    h.x=clamp(h.x+h.vx*dt,30,G.tutorial&&h.side===1?1500:WORLD-30);
     h.y+=h.vy*dt;
     if(h.y>GROUND-16){h.y=GROUND-16;h.vy=0;h.vx*=.6;}
     if(h.y<54){h.y=54;h.vy=Math.max(h.vy,0);}
@@ -533,6 +592,7 @@ function update(dt){
     if(service){
       const forward=service.kind==='forward';
       h.fuel=Math.min(100,h.fuel+(forward?5:12)*dt);
+      if(h.fuel>=20)h.reserve=RESERVE_SECONDS;
       const limit=h.maxhp*(forward?FORWARD_HP:1);
       if(h.hp<limit)h.hp=Math.min(limit,h.hp+(forward?4:14)*dt);
       if(!forward){
@@ -540,16 +600,19 @@ function update(dt){
         h.mis=Math.min(4,h.mis+1.2*dt);
         h.flares=Math.min(3,h.flares+dt);
       }
-    }else if(h.side===1)h.fuel=Math.max(0,h.fuel-FUEL_BURN*(1+Math.abs(h.vx)/430)*dt);
+    }else if(h.side===1){
+      h.fuel=Math.max(0,h.fuel-FUEL_BURN*(1+Math.abs(h.vx)/430)*dt);
+      if(h.fuel<=0)h.reserve=Math.max(0,h.reserve-dt);
+    }
     h.washTimer-=dt;
-    if(h.y>GROUND-110&&h.fuel>0&&h.washTimer<=0){
+    if(h.y>GROUND-110&&enginePowered(h)&&h.washTimer<=0){
       h.washTimer=.065;emitGroundWash(h.x,1-(GROUND-h.y)/130);
     }
     // Damage smoke is emitted by simulation, so pause does not accumulate particles.
     if(h.hp<h.maxhp*.4&&Math.random()<dt*15)
       G.parts.push({x:h.x+rnd(-16,10),y:h.y+rnd(-6,6),vx:-h.vx*.15+rnd(-15,15),vy:rnd(-40,-10),
         life:rnd(.5,.9),c:'#555',s:rnd(3,6),g:-.15,wind:1});
-    if(h.side===1&&h.fuel<=0&&!h.rearming&&h.y>=GROUND-16){
+    if(h.side===1&&!enginePowered(h)&&!h.rearming&&h.y>=GROUND-16){
       msg('FORCED LANDING — HELICOPTER LOST','#ffb84d');hurtHeli(h,h.maxhp);
       continue;
     }
@@ -557,7 +620,7 @@ function update(dt){
     for(const b of G.bunkers){
       if(b.owner===h.side||b.balloonDead||b.cableBroken)continue;
       if(h.cableCd<=0&&Math.abs(h.x-b.x)<16&&h.y>BALLOON_Y-24&&h.y<GROUND-26){
-        hurtHeli(h,65);h.cableCd=1.2;
+        hurtHeli(h,65,{x:b.x,y:h.y});h.cableCd=1.2;
         h.vy=-240;h.vx=(h.x<b.x?-1:1)*300;
         SFX.cable();msg(h.side>0?'CABLE STRIKE!':'ENEMY HIT YOUR CABLE!',h.side>0?'#ff5548':'#4db2ff');
       }
@@ -597,6 +660,11 @@ function update(dt){
   updateUnits(dt);
   updateProjectiles(dt);
   updateCapture(dt);
+  updateTutorial();
+  const threat=vanThreat();
+  const level=threat?threat.level:0;
+  if(level>G.vanAlertLevel)SFX.alarm();
+  G.vanAlertLevel=level;
 
   // balloon respawns
   for(const b of G.bunkers){
@@ -672,7 +740,7 @@ function SXP(g){return Math.max(0,600-Math.floor(g.time/2));}
 
 // ---------- player heli
 function updatePlayerHeli(h,dt){
-  const power=h.fuel>0?1:0;
+  const power=enginePowered(h)?1:0;
   const A=430*power,LIFT=560*power;
   if(keys.KeyW||keys.KeyA||keys.KeyS||keys.KeyD||keys.ArrowUp||keys.ArrowDown||keys.ArrowLeft||keys.ArrowRight)G.scanTimer=0;
   if(keys.ArrowLeft||keys.KeyA){h.vx-=A*dt;h.dir=-1;}
@@ -775,6 +843,7 @@ function updateUnits(dt){
         }
       }else moved=true;
     }
+    if(G.tutorial&&G.tutorial.step<3)moved=false;
     if(moved){
       // spacing vs friend ahead
       let blocked=false;
@@ -810,7 +879,7 @@ function updateProjectiles(dt){
     }
     if(!hit)for(const h of G.helis){
       if(h.dead||h.side===b.side)continue;
-      if(Math.abs(b.x-h.x)<26&&Math.abs(b.y-h.y)<12){hurtHeli(h,b.dmg);hit=true;break;}
+      if(Math.abs(b.x-h.x)<26&&Math.abs(b.y-h.y)<12){hurtHeli(h,b.dmg,{x:b.x-b.vx*.15,y:b.y-b.vy*.15});hit=true;break;}
     }
     if(!hit)hit=hitBalloonOrCable(b.x,b.y,b.side,b.dmg);
     if(hit||b.life<=0)G.bullets.splice(i,1);
@@ -846,6 +915,7 @@ function updateProjectiles(dt){
     }
     if(!hit)hit=hitBalloonOrCable(b.x,b.y,b.side,55);
     if(hit||landed){
+      if(G.tutorial&&b.side===1)G.tutorial.bombed=true;
       explode(b.x,Math.min(b.y,GROUND-8),78,55,b.side);
       G.bombs.splice(i,1);
     }
@@ -872,7 +942,7 @@ function updateProjectiles(dt){
       if(d<30){
         explode(m.x,m.y,58,48,m.side);
         if(G.units.includes(m.target))hurtUnit(m.target,20);
-        else if(G.helis.includes(m.target))hurtHeli(m.target,20);
+        else if(G.helis.includes(m.target))hurtHeli(m.target,20,{x:m.x,y:m.y});
         G.missiles.splice(i,1);continue;
       }
     }else m.vy+=200*dt;
@@ -922,13 +992,14 @@ function updateCapture(dt){
 
 // ---------- enemy commander
 function aiDecide(){
+  if(G.tutorial)return;
   const mine=G.units.filter(u=>u.side<0);
   const n=t=>mine.filter(u=>u.type===t).length;
   if(n('INF')<3)buy(-1,'INF');
   else if(!n('AA')&&Math.random()<.85)buy(-1,'AA');
   else if(n('TANK')<1+Math.floor(G.time/140))buy(-1,'TANK');
   else if(n('INF')<7)buy(-1,'INF');
-  if(G.time>70&&!n('VAN')&&G.eFunds>=UT.VAN.cost){
+  if(G.time>difficulty().vanTime&&!n('VAN')&&G.eFunds>=UT.VAN.cost){
     const escorts=n('TANK')+n('AA');
     if(escorts>=2||Math.random()<.22){
       buy(-1,'VAN');
@@ -961,6 +1032,11 @@ function render(){
   for(const h of G.helis)if(!h.dead)drawHeli(h);
   drawProjectiles();
   drawBombPredictor();
+  if(G.tutorial){
+    const target=G.tutorial.step===0?500:G.tutorial.step===3?G.bunkers[0].x:null;
+    if(target!==null){cx.strokeStyle='#9ad9be';cx.lineWidth=2;cx.beginPath();
+      cx.moveTo(target-G.camX-12,GROUND-180);cx.lineTo(target-G.camX,GROUND-165);cx.lineTo(target-G.camX+12,GROUND-180);cx.stroke();}
+  }
   drawParts();
   cx.restore();
   drawVignette();
@@ -970,6 +1046,20 @@ function render(){
   }
   if(TOUCH.active&&TOUCH.render){G.buttons=[];TOUCH.render();}
   else{drawHUD();drawOverlays();}
+  drawDamageEdges();
+}
+
+function drawDamageEdges(){
+  if(G.state!=='play'||G.paused)return;
+  cx.save();
+  for(const [edge,time] of Object.entries(G.damageEdges))if(time>0){
+    cx.fillStyle='rgba(255,110,65,'+(time/.65*.75)+')';
+    if(edge==='left')cx.fillRect(0,H*.28,5,H*.44);
+    if(edge==='right')cx.fillRect(W-5,H*.28,5,H*.44);
+    if(edge==='top')cx.fillRect(W*.3,0,W*.4,5);
+    if(edge==='bottom')cx.fillRect(W*.3,H-5,W*.4,5);
+  }
+  cx.restore();
 }
 
 function drawSky(){
@@ -1160,12 +1250,13 @@ function drawBunker(b){
     cx.strokeStyle='rgba(255,90,70,.85)';cx.lineWidth=1.6;
     cx.beginPath();cx.moveTo(x,by+26);cx.lineTo(x+sway,by+90);cx.stroke();
     cx.beginPath();cx.moveTo(x,topDomeY);cx.lineTo(x-sway*.4,GROUND-70);cx.stroke();
-    if(Math.random()<.25){
+    if(cableIsUrgent(b)&&!G.paused&&Math.random()<.1){
       G.parts.push({x:b.x+sway,y:by+90,vx:rnd(-15,15),vy:rnd(10,35),life:.2,c:'#ffe9a0',s:1.5,add:true});
     }
   }else{
     const by=balloonY(b);
     const isEnemy=b.owner!==1;
+    const urgent=cableIsUrgent(b);
     // Core tension wire
     cx.strokeStyle=isEnemy?'#f0f4fc':'#80c5ff';
     cx.lineWidth=1.8;
@@ -1177,7 +1268,7 @@ function drawBunker(b){
     for(let n=1;n<=numNodes;n++){
       const ny=(by+26)+n*44;
       const blink=Math.sin(G.anim*7+n+b.x)>0;
-      cx.fillStyle=isEnemy?(blink?'#ff3322':'#881c14'):(blink?'#4db2ff':'#1e4c70');
+      cx.fillStyle=isEnemy?(urgent?(blink?'#ff3322':'#881c14'):'#bf8277'):'#508fbb';
       cx.fillRect(x-2.5,ny-2,5,4);
     }
   }
@@ -1191,6 +1282,7 @@ function drawBunker(b){
 
   // balloon (or respawn hint)
   if(b.balloonDead){
+    if(G.tutorial)return;
     cx.font='bold 9px monospace';cx.fillStyle='rgba(255,180,120,.9)';cx.textAlign='center';
     cx.fillText('BALLOON RESPAWN: '+Math.ceil(b.balloonRespawn)+'s',x,GROUND-58);
   }else{
@@ -1282,11 +1374,11 @@ function drawHeli(h){
   cx.stroke();cx.restore();
   // cargo / rearm labels
   cx.textAlign='center';
-  if(h.cargo>0){
+  if(h.cargo>0&&!TOUCH.active){
     cx.fillStyle='#ffd97a';cx.font='bold 10px monospace';
     cx.fillText('▲'+h.cargo,x,h.y-44);
   }
-  if(h.rearming){
+  if(h.rearming&&!TOUCH.active){
     cx.fillStyle='#8dff8d';cx.font='bold 9px monospace';
     cx.fillText(h.service==='forward'?'FORWARD SERVICE':'HQ SERVICE',x,h.y-56);
   }
@@ -1331,9 +1423,9 @@ function drawHeli(h){
         cx.moveTo(tx+d*22,ty+8);cx.lineTo(tx+d*22,ty+16);cx.lineTo(tx+d*14,ty+16);
       }
       cx.stroke();cx.font='9px monospace';cx.fillStyle='#ffd190';cx.textAlign='center';
-      cx.fillText(h.cdMis<=0?'M • LOCK':'RELOADING',tx,ty-23);
+      if(!TOUCH.active)cx.fillText(h.cdMis<=0?'M • LOCK':'RELOADING',tx,ty-23);
     }
-    if(h.y>=GROUND-130){
+    if(h.y>=GROUND-130&&!TOUCH.active){
       const count=G.units.filter(u=>u.type==='INF'&&u.side===1&&Math.abs(u.x-h.x)<115).length;
       if(h.cargo||count){
         cx.font='bold 10px monospace';cx.textAlign='center';cx.fillStyle='#c6e8db';
@@ -1528,7 +1620,7 @@ function drawHUD(){
     cx.fillText('FUEL',dx+10,dy+64);
     cx.fillStyle='#202c40';cx.fillRect(dx+52,dy+56,180,8);
     cx.fillStyle=p.fuel<LOW_FUEL?'#ffb84d':'#73cbbc';cx.fillRect(dx+52,dy+56,180*p.fuel/100,8);
-    cx.fillText(Math.ceil(p.fuel)+'%'+(p.rearming?' REFUELING':''),dx+242,dy+64);
+    cx.fillText(p.fuel<=0?'RESERVE '+Math.ceil(p.reserve)+'s':Math.ceil(p.fuel)+'%'+(p.rearming?' REFUELING':''),dx+242,dy+64);
     const cy0=dy+78;
     cx.fillStyle='rgba(6,10,20,.8)';cx.fillRect(dx+8,cy0,dw-16,32);
     cx.strokeStyle='rgba(50,70,105,.6)';cx.strokeRect(dx+8,cy0,dw-16,32);
@@ -1885,7 +1977,7 @@ function drawHUD(){
     cx.font='bold 12px monospace';cx.textAlign='center';
     cx.fillStyle=blink?'#ffffff':'#ffcc44';
     const hpLeft=Math.max(0,Math.round((p.hp/p.maxhp)*100));
-    cx.fillText(p.hp<p.maxhp*.25?'MASTER CAUTION • HULL '+hpLeft+'%':p.fuel<=0?'ENGINE OUT • RETURN TO HQ':'MASTER CAUTION • LOW FUEL',W/2,cy0+17);
+    cx.fillText(p.hp<p.maxhp*.25?'MASTER CAUTION • HULL '+hpLeft+'%':p.fuel<=0?(p.reserve>0?'RESERVE '+Math.ceil(p.reserve)+'s • LAND NOW':'ENGINE OUT • LAND'):'MASTER CAUTION • LOW FUEL',W/2,cy0+17);
     cx.font='10px monospace';cx.fillText('LAND AT HQ OR A FRIENDLY FORWARD PAD',W/2,cy0+32);
     // cockpit pulsing perimeter vignette
     cx.fillStyle=blink?'rgba(255,20,20,0.09)':'rgba(255,20,20,0.03)';
@@ -1917,7 +2009,7 @@ function drawHUD(){
         const arrowX=onRight?W-30:30;
         const arrowY=GROUND-36;
         const dist=Math.abs(Math.round(v.x-PLAYER_X));
-        drawThreatIndicator(arrowX,arrowY,onRight,'ENEMY VAN: '+dist+'m','#ff4444');
+        drawThreatIndicator(arrowX,arrowY,onRight,'VAN ~'+formatETA(Math.max(0,(v.x-PLAYER_X-70)/UT.VAN.spd))+' TO HQ','#ff4444');
       }
     }
     const eHeli=G.helis[1];
@@ -1932,9 +2024,18 @@ function drawHUD(){
     }
   }
 
+  const threat=vanThreat();
+  if(threat){
+    cx.fillStyle=threat.level?'#ffb16f':'#b5cbd0';cx.textAlign='right';cx.font='bold 12px monospace';
+    cx.fillText('HQ BREACH ~'+formatETA(threat.seconds)+(threat.level?' • INTERCEPT NOW':''),W-18,125);
+  }
+  if(G.tutorial){
+    cx.fillStyle='#b5e4d3';cx.font='bold 12px monospace';cx.textAlign='center';
+    cx.fillText(tutorialHint(),W/2,92);
+  }
   // 9. COMBAT MESSAGE LOG
   cx.textAlign='center';
-  G.msgs.forEach((m,i)=>{
+  G.msgs.filter(m=>m.kind!=='routine').forEach((m,i)=>{
     cx.save();
     cx.globalAlpha=m.age>2.4?1-(m.age-2.4)/.8:1;
     const msgY=116+i*24;
@@ -2037,6 +2138,15 @@ function drawOverlays(){
     cx.fillStyle='#4db2ff';
     cx.fillText('• BUNKERS: Deliver 3 infantry to secure friendly balloon.',c2x+24,cy+272);
 
+    cx.font='10px monospace';cx.textAlign='center';cx.fillStyle='#9ebbb3';
+    cx.fillText('DIFFICULTY: '+DIFFICULTIES[SETTINGS.difficulty].name+' • Starting funds $'+DIFFICULTIES[SETTINGS.difficulty].funds,W/2,my+mh-122);
+    const choices=[['recruit','1 RECRUIT'],['normal','2 NORMAL'],['veteran','3 VETERAN'],['tutorial','T TRAINING']];
+    choices.forEach(([id,label],i)=>{
+      const x=W/2-270+i*138,y=my+mh-112,w=130,h=26;
+      G.buttons.push({id:'mode_'+id,x,y,w,h,onClick:()=>{if(id==='tutorial')startTutorial();else SETTINGS.difficulty=id;}});
+      cx.fillStyle=SETTINGS.difficulty===id?'#294e43':'#121f2b';cx.fillRect(x,y,w,h);
+      cx.strokeStyle='#577c75';cx.strokeRect(x,y,w,h);cx.fillStyle='#cae7da';cx.font='bold 11px monospace';cx.textAlign='center';cx.fillText(label,x+w/2,y+17);
+    });
     const btnW=340,btnH=52,btnX=W/2-btnW/2,btnY=my+mh-76;
     const isHover=G.buttons.some(b=>b.id==='start_btn'&&mouse.x>=b.x&&mouse.x<=b.x+b.w&&mouse.y>=b.y&&mouse.y<=b.y+b.h);
     G.buttons.push({id:'start_btn',x:btnX,y:btnY,w:btnW,h:btnH,onClick:()=>{newGame();G.state='play';SFX.blip();}});
@@ -2097,7 +2207,7 @@ function drawOverlays(){
 
     const reBtnX=px+pw/2-70,reBtnY=py+ph-64,reBtnW=140,reBtnH=40;
     const reHover=mouse.x>=reBtnX&&mouse.x<=reBtnX+reBtnW&&mouse.y>=reBtnY&&mouse.y<=reBtnY+reBtnH;
-    G.buttons.push({id:'pause_restart',x:reBtnX,y:reBtnY,w:reBtnW,h:reBtnH,onClick:()=>{newGame();G.state='play';SFX.blip();}});
+    G.buttons.push({id:'pause_restart',x:reBtnX,y:reBtnY,w:reBtnW,h:reBtnH,onClick:()=>{restartMission();SFX.blip();}});
     cx.fillStyle=reHover?'#442222':'#2a1616';cx.strokeStyle=reHover?'#ff7766':'#aa4444';cx.lineWidth=1.5;
     cx.beginPath();cx.roundRect(reBtnX,reBtnY,reBtnW,reBtnH,4);cx.fill();cx.stroke();
     cx.font='bold 12px monospace';cx.fillStyle='#ff8877';cx.textAlign='center';
@@ -2236,10 +2346,10 @@ function frame(t){
   }
   render();
 }
-let aiAccum=0;
 function aiTick(dt){
-  aiAccum+=dt;
-  if(aiAccum>=4){aiAccum-=4;aiDecide();}
+  if(G.tutorial)return;
+  G.aiAccum+=dt;
+  if(G.aiAccum>=difficulty().interval){G.aiAccum-=difficulty().interval;aiDecide();}
 }
 requestAnimationFrame(frame);
 </script>

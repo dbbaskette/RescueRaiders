@@ -138,3 +138,11 @@ test('mobile replay offers slow motion and follow-camera controls without resumi
  assert.equal(node('m-replay-controls').hidden,false);emit('m-replay-speed','click');assert.equal(G.replay.speed,.35);
  emit('m-replay-focus','click');assert.equal(G.replay.follow,false);emit('m-replay-close','click');assert.equal(G.state,'win');
 `));
+
+
+test('opening a different mobile panel restores its heading without resetting an active scroll',()=>mobile()(`
+ TOUCH.render();const panel=node('m-modal').querySelector('.panel');panel.scrollTop=150;TOUCH.render();assert.equal(panel.scrollTop,150);
+ emit('m-primary','click');TOUCH.render();emit('m-units','click');TOUCH.render();assert.equal(panel.scrollTop,0);
+ panel.scrollTop=180;TOUCH.render();assert.equal(panel.scrollTop,180);
+ emit('m-primary','click');TOUCH.render();emit('m-pause','click');TOUCH.render();assert.equal(panel.scrollTop,0);
+`));

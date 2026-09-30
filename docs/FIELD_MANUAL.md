@@ -42,7 +42,7 @@ Parachutists inherit horizontal aircraft motion, fall for 0.25 seconds before de
 | 4 | Demo Van | $250 | Reach enemy HQ; one active per side / Support |
 | 5 | Engineer | $40 | Capture turrets and repair defenses / Infantry |
 
-Desktop: select a group with **Tab** or the four group buttons, then **Z Advance**, **X Hold** or **V Rally**. Mobile: open **Command**, select the group and order. Command pauses the battle while you decide.
+Desktop: select a group with **Tab** or the four group buttons, then **Z Advance**, **X Hold** or **V Rally**. Mobile: open **Command**, select the group and order. Command pauses the battle while you decide. On a smaller phone, swipe vertically—even over buttons—to reach the rest of the panel. Opening a different menu restores its heading; remaining in that menu preserves your scroll position.
 
 - **Advance:** move toward enemy HQ using escort spacing.
 - **Hold:** stop movement while retaining firing, nearby capture and engineering work.

@@ -53,7 +53,7 @@
   document.body.append(root);
   const el=id=>document.getElementById(id);
   const stick=el('flight-stick'),knob=el('stick-knob');
-  let stickId=null,tray=false,trayWasPaused=false,portrait=false;
+  let stickId=null,tray=false,trayWasPaused=false,portrait=false,panelView='';
   const owners=new Map();
   function unlock(){const audio=ac();if(audio.state==='suspended')audio.resume().catch(()=>{});}
   function canFly(){return ASSETS_OK&&G.state==='play'&&!G.paused&&!G.helis[0].dead&&!portrait&&!tray;}
@@ -191,6 +191,8 @@
     text('m-replay-focus',G.replay?.follow?'Following '+G.replay.focus.label:'Original camera');
     if(G.replay){el('m-modal').hidden=true;el('m-controls').hidden=true;root.querySelector('.topbar').inert=true;el('m-training').hidden=true;return;}
     const p=G.helis[0],menu=G.state!=='play'||G.paused||tray||!ASSETS_OK;
+    const view=menu?(tray?'command':G.state):'';
+    if(view!==panelView){el('m-modal').querySelector('.panel').scrollTop=0;panelView=view;}
     if(menu||p.dead||portrait){if(TOUCH.fire||TOUCH.x||TOUCH.y||G.bombAiming||owners.size)reset();}
     root.querySelector('.topbar').inert=menu||portrait;
     el('m-controls').hidden=menu||p.dead||portrait;

@@ -41,7 +41,10 @@ Pilot your attack helicopter through contested territory. Deploy combined-arms g
 | **`3`** | Deploy AA Truck ($160) — Long-range anti-aircraft flak missiles |
 | **`4`** | Deploy Demo Van ($250) — Strategic objective unit (1 max) |
 | **`5`** | Deploy Engineer ($40) — Captures/rebuilds turrets and repairs friendly bunkers |
-| **`P`** | Tactical Pause Menu |
+| **`Q`** / click a cargo seat | Select the passenger to deploy next |
+| **`F`** | Deploy only the selected passenger (ground or parachute) |
+| **`Z` / `X` / `V`** | Ground forces: Advance / Hold / Rally at helicopter position |
+| **`P`** | Tactical Pause Menu; choose Full / Reduced / Off camera shake |
 | **Mouse Click on Radar** | Scan a sector for 2.5 seconds; flight input returns to your helicopter |
 | **Mouse Click on Dock** | Click any unit card at the bottom to purchase reinforcements |
 
@@ -56,7 +59,7 @@ Open the game on a touchscreen phone or tablet and rotate to landscape. Touch co
 - **BOMB:** Hold to preview, release over the button to drop. Drag off the button or tap **Cancel bomb** to cancel.
 - **MISSILE / FLARE:** Tap to launch or deploy. Ammunition counts appear on the buttons.
 - **Troops:** Board infantry or engineers while low. With cargo aboard, tap to deploy all while low or parachute one troop per tap aloft.
-- **UNITS:** Opens a reinforcement tray and pauses the battle. Choose units, then tap **Back to flight**.
+- **COMMAND:** Pauses the battle and opens reinforcements, Advance/Hold/Rally orders, cargo selection/deployment, and camera shake settings. Tap **Back to flight** to resume.
 - **Radar:** Tap to scan a sector; moving the joystick restores tracking.
 - **Pause / rotation:** Rotating to portrait or leaving the page clears held controls and pauses. Return to landscape and resume explicitly.
 
@@ -141,3 +144,43 @@ The game pauses when its window loses focus. Graphics include terrain-dependent 
 The battlefield uses a warmer photographic landscape, restrained atmospheric haze, desaturated vehicle materials, smooth sprite scaling, and world-anchored soil, stones, grass, and wheel ruts. Infantry and defenses retain ownership indicators for readability. Material shading is cached in a bounded sprite cache, and mobile uses a lower terrain-detail density.
 
 Aircraft pitch eases with horizontal velocity. Main and tail rotors share the airframe transform; rotor speed decays after fuel exhaustion, with a visual windmilling approximation while airborne. Ground shadows project away from the upper-right lighting direction, broaden and fade with altitude. Smoke and dust have soft density edges; bombs and tracer streaks align with their simulated velocities. These are physically motivated visual approximations, not a rigid-body helicopter simulation or physically based 3D renderer. Flight controls, damage, targeting, and bomb trajectories retain their existing gameplay rules.
+
+## Units, parachutes, and battlefield audio
+
+Ground-unit gait and suspension follow distance traveled and stop when the unit stops. Engineers carry a visible field pack, tank shots recoil, and muzzle flashes are independent of damage flashes. Turrets point toward their selected targets.
+
+Airborne passengers inherit half the helicopter's horizontal speed. After a 0.25-second deployment delay, canopies inflate over 0.75 seconds; gravity, drag, and wind then govern descent. Ribbed fabric, suspension lines, harness detail, and gentle sway make the deployment readable. Troops settle for 0.55 seconds after landing, and discarded cloth fades after seven seconds (at most 24 remnants). These are game-scale approximations, not certified parachute dynamics; no random failures are introduced.
+
+Sound uses synthesized Web Audio layers: rifle cracks, rotor-driven gunfire, cannon impact and bass, missile exhaust, explosion tails, and canopy fabric noise. Battlefield sounds pan relative to the camera and become quieter and less bright with distance. Two reusable rotor beds follow helicopter rotor speed. A shared compressed mix controls output; mute, pause, and hiding the page silence the mix. No external audio downloads are required. Headphones make positional cues easier to hear.
+
+### Automatic troop boarding
+
+Land in front of friendly infantry or engineers and hold nearly still. Troops within 65 world units behind/beside the helicopter board automatically, one every 0.35 seconds, up to the four-seat limit. Role and health are preserved; enemies and vehicles cannot board. Hovering or flying past does not trigger pickup. Manual **E / Board** remains available for low-hover pickup.
+
+After a ground drop, automatic pickup stays disabled until you lift above the boarding area (70 world units off the ground), preventing immediate reboarding. Paratroopers now use a dedicated suspended pose with helmet, raised arms, bent knees, harness and stowed weapon; deployment begins with a trailing bag, followed by a vented, ribbed, scalloped canopy. Landed canopies deflate before fading.
+
+## Command, campaign, and replay
+
+### Transport and ground orders
+
+Cargo seats identify infantry or engineers and show remaining health. Click a seat or press **Q** to select a passenger; **F** deploys that passenger, while **E** retains whole-bay ground unloading and single airborne drops. Mobile provides seat selection and **Deploy selected** in the paused Command panel. A subtle ground marker near landing altitude shows nearby troops, seats, and boarding progress. Contested or fast approaches change the cue to amber; it is guidance, not collision avoidance.
+
+**Advance** resumes the normal march toward enemy HQ. **Hold** stops friendly ground movement while units can defend and work on nearby emplacements. **Rally** sends friendly ground forces toward the helicopter's position when the order is issued; troops stop near that point and new reinforcements follow the current order. Orders affect your ground convoy, not the helicopter or stranded rescue troops. Infantry can still capture a bunker while holding beside it.
+
+### Three-mission campaign
+
+Select **Campaign** on the title screen (**C** on desktop). Quick Battle and Training remain separate.
+
+1. **Foothold:** Capture the marked neutral forward bunker with the provided infantry.
+2. **Bring them home:** Pick up four marked stranded troops and return them to the HQ service area. They unload automatically there. Losing any rescue-team member fails the mission; Retry restores the team.
+3. **Breakthrough:** Escort your Van past occupied turrets and bunkers to enemy HQ.
+
+Each mission has its own defense layout. Next Mission advances after victory; Retry/Restart preserves the current mission. Finishing the third mission returns to the title screen. Progress is held only for the current session; there is no campaign save yet.
+
+### Camera, combat feedback, and debrief
+
+The camera smoothly looks ahead with horizontal velocity. Shake can be reduced or disabled. Landings above 95 world units/second of downward speed cause proportional hull damage (capped at 60 per touchdown), with skid settling and dust; ordinary slow landings remain safe. Armor impacts spark, soil impacts throw debris, damaged vehicles smoke, and destroyed guns leave broken barrels. Fallen troops and discarded equipment fade; exhaust, moving tank tracks, translucent cloud banks, and windsocks are cosmetic. Mobile particles are capped at 180; desktop at 700.
+
+Pad instructions appear only when approaching low, and missile brackets appear while firing/holding **M** or briefly after launch. Safety warnings remain active. The debrief adds rescue count, convoy losses, captured bases, and the last helicopter-loss cause.
+
+**Watch final moments** (**R** from the desktop debrief) plays up to eight seconds of recorded battlefield visuals. **Esc** or **Back to debrief** exits. The replay is silent, optional, bounded to 64 snapshots, and never resumes or mutates the mission. It records visuals at eight samples per second rather than a full deterministic simulation.

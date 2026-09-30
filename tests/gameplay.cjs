@@ -2,7 +2,7 @@ const {readFileSync}=require('node:fs');
 const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1]+'\n'+readFileSync('experience.js','utf8');
 function game(){
  const noop=()=>{};
  const gradient={addColorStop:noop};
@@ -247,4 +247,134 @@ test('shadow projection softens with altitude and remains finite on landing',()=
  assert.ok(high.radius>near.radius);assert.ok(high.height>near.height);
  assert.ok(high.opacity<near.opacity);assert.ok(high.offset<near.offset);
  assert.equal(Math.abs(ground.offset),0);assert.ok(ground.radius>0);
+`));
+test('paratrooper drag converges across frame rates and retains deployment momentum',()=>game()(`
+ const a={x:2000,y:150,vx:100,vy:30,chuteAge:0},b={...a};
+ for(let i=0;i<60;i++)stepParatrooper(a,1/30);
+ for(let i=0;i<288;i++)stepParatrooper(b,1/144);
+ assert.ok(a.x>2000);assert.ok(a.vx<100);assert.ok(a.vy>40&&a.vy<70);
+ assert.ok(Math.abs(a.x-b.x)<.5);assert.ok(Math.abs(a.y-b.y)<2);
+`));
+test('parachute landing preserves troops, briefly settles and bounds discarded cloth',()=>game()(`
+ G.turrets=[];G.bunkers=[];
+ for(let i=0;i<30;i++){const u=spawnUnit(1,'INF');G.units.splice(G.units.indexOf(u),1);Object.assign(u,{y:GROUND-1,vx:0,vy:55,chuteAge:1});G.paratroopers.push(u);}
+ updateEmplacements(.1);assert.equal(G.paratroopers.length,0);assert.equal(G.units.length,30);assert.equal(G.canopies.length,24);
+ const u=G.units[0],x=u.x;updateUnits(.1);assert.equal(u.x,x);assert.ok(u.landing>0);
+ updateEmplacements(8);assert.equal(G.canopies.length,0);
+`));
+test('ground gait stops while blocked and firing no longer uses damage flash',()=>game()(`
+ G.turrets=[];G.bunkers=[];const tank=spawnUnit(1,'TANK'),enemy=spawnUnit(-1,'TANK');
+ tank.x=500;enemy.x=700;tank.cd=0;const phase=tank.phase;updateUnits(.02);
+ assert.equal(tank.phase,phase);assert.ok(tank.fireFlash>0);assert.equal(tank.flash,0);
+ G.units=[tank];updateUnits(.1);assert.ok(tank.phase>phase);assert.equal(tank.moving,true);
+`));
+test('sound perspective pans to action and attenuates distant sources',()=>game()(`
+ G.camX=1000;const center=soundPerspective(1640),left=soundPerspective(1100),right=soundPerspective(2180),far=soundPerspective(8000);
+ assert.equal(center.pan,0);assert.equal(center.gain,1);assert.ok(left.pan<0&&right.pan>0);
+ assert.equal(left.gain,right.gain);assert.ok(far.gain<left.gain);assert.ok(far.cutoff<left.cutoff);
+ assert.equal(soundPerspective().gain,1);
+`));
+test('rotor audio reuses two beds and silences on pause, mute and hidden pages',()=>game()(`
+ const param=()=>({value:0,setValueAtTime(v){this.value=v;},setTargetAtTime(v){this.value=v;},cancelScheduledValues(){}});
+ const node=()=>({gain:param(),frequency:param(),pan:param(),threshold:param(),knee:param(),ratio:param(),attack:param(),release:param(),connect(n){return n;},start(){}});
+ AC={currentTime:0,destination:node(),createBufferSource:node,createBiquadFilter:node,createOscillator:node,createGain:node,createStereoPanner:node,createDynamicsCompressor:node};
+ AUDIO_MUTED=false;G.state='play';updateRotorAudio();assert.equal(ROTOR_AUDIO.length,2);
+ for(let i=0;i<100;i++)updateRotorAudio();assert.equal(ROTOR_AUDIO.length,2);
+ G.paused=true;updateRotorAudio();assert.equal(AUDIO_BUS.output.gain.value,0);
+ G.paused=false;AUDIO_MUTED=true;updateRotorAudio();assert.equal(AUDIO_BUS.output.gain.value,0);
+ AUDIO_MUTED=false;document.hidden=true;updateRotorAudio();assert.equal(AUDIO_BUS.output.gain.value,0);
+ document.hidden=false;updateRotorAudio();assert.equal(AUDIO_BUS.output.gain.value,.8);
+ newGame();G.state='play';updateRotorAudio();assert.equal(ROTOR_AUDIO.length,2);
+`));
+test('landing in front of friendly troops boards gradually and preserves role and health',()=>game()(`
+ const p=G.helis[0];Object.assign(p,{x:1000,y:GROUND-16,vx:0,vy:0});
+ const e=spawnUnit(1,'ENG');e.x=985;e.hp=13;const inf=spawnUnit(1,'INF');inf.x=950;
+ autoBoardTroops(p,.2);assert.equal(p.cargo,0);autoBoardTroops(p,.16);assert.equal(p.cargo,1);
+ assert.equal(p.cargoUnits[0].type,'ENG');assert.equal(p.cargoUnits[0].hp,13);
+ autoBoardTroops(p,.35);assert.equal(p.cargo,2);assert.equal(G.units.length,0);
+`));
+test('automatic boarding requires a slow landing and never exceeds four seats',()=>game()(`
+ const p=G.helis[0];Object.assign(p,{x:1000,y:GROUND-40,vx:0,vy:0});
+ for(let i=0;i<6;i++){const u=spawnUnit(1,'INF');u.x=990-i*5;}
+ const enemy=spawnUnit(-1,'INF');enemy.x=1000;const tank=spawnUnit(1,'TANK');tank.x=1000;
+ autoBoardTroops(p,2);assert.equal(p.cargo,0);p.y=GROUND-16;p.vx=30;autoBoardTroops(p,2);assert.equal(p.cargo,0);
+ p.vx=0;autoBoardTroops(p,2);assert.equal(p.cargo,4);assert.ok(G.units.includes(enemy));assert.ok(G.units.includes(tank));
+`));
+test('ground deployment inhibits automatic reboarding until takeoff',()=>game()(`
+ const p=G.helis[0];Object.assign(p,{x:1000,y:GROUND-16,vx:0,vy:0,cargo:2});
+ troopTransfer(p);assert.equal(p.cargo,0);autoBoardTroops(p,3);assert.equal(p.cargo,0);
+ p.y=GROUND-80;autoBoardTroops(p,.1);assert.equal(p.boardingInhibit,false);
+ p.y=GROUND-16;autoBoardTroops(p,1);assert.equal(p.cargo,2);
+`));
+test('automatic boarding tops up partial cargo and ignores troops ahead or still landing',()=>game()(`
+ const p=G.helis[0];Object.assign(p,{x:1000,y:GROUND-16,vx:0,vy:0,cargo:1,cargoUnits:[{type:'ENG',hp:11}]});
+ const ahead=spawnUnit(1,'INF');ahead.x=1030;const settling=spawnUnit(1,'INF');settling.x=990;settling.landing=.5;
+ autoBoardTroops(p,1);assert.equal(p.cargo,1);settling.landing=0;autoBoardTroops(p,.4);
+ assert.equal(p.cargo,2);assert.equal(p.cargoUnits[0].hp,11);assert.ok(G.units.includes(ahead));
+`));
+test('parachute has a deployment delay before its canopy opens',()=>game()(`
+ assert.equal(parachuteInflation(0),0);assert.equal(parachuteInflation(.25),0);
+ assert.ok(parachuteInflation(.6)>0&&parachuteInflation(.6)<1);assert.equal(parachuteInflation(1),1);
+ G.state='play';const p=G.helis[0];p.cargo=1;troopTransfer(p);
+ for(const age of [.1,.5,1.2]){G.paratroopers[0].chuteAge=age;render();}
+`));
+test('selected cargo deploys first without losing other passengers or rescue identity',()=>game()(`
+ const p=G.helis[0];p.cargo=3;p.cargoUnits=[{type:'INF',hp:12},{type:'ENG',hp:19,rescue:true},{type:'INF',hp:22}];p.y=GROUND-30;
+ selectCargo(1);troopTransfer(p,true);assert.equal(p.cargo,2);assert.equal(G.units[0].type,'ENG');assert.equal(G.units[0].hp,19);assert.equal(G.units[0].rescue,true);
+ assert.equal(p.cargoUnits[0].hp,12);assert.equal(p.cargoUnits[1].hp,22);troopTransfer(p);assert.equal(p.cargo,0);assert.equal(G.units.length,3);
+`));
+test('hold stops movement while rally can reverse a convoy and advance resumes',()=>game()(`
+ G.turrets=[];G.bunkers=[];const u=spawnUnit(1,'TANK');u.x=2000;G.helis[0].x=1700;
+ setOrder('hold');updateUnits(1);assert.equal(u.x,2000);
+ setOrder('rally');updateUnits(1);assert.ok(u.x<2000);
+ u.x=1720;updateUnits(1);assert.equal(u.x,1720);
+ setOrder('advance');updateUnits(1);assert.ok(u.x>1720);
+`));
+test('landing cues distinguish speed, nearby enemies, service and boarding capacity',()=>game()(`
+ const p=G.helis[0];p.x=1000;p.y=300;assert.equal(landingCue(p),null);
+ p.y=GROUND-50;p.vx=70;assert.equal(landingCue(p).safe,false);p.vx=0;
+ assert.equal(landingCue(p).safe,true);const e=spawnUnit(-1,'INF');e.x=p.x;assert.equal(landingCue(p).safe,false);
+ G.units=[];p.cargo=4;assert.equal(landingCue(p).label,'Cargo full');
+`));
+test('hard landing applies graded damage once and gentle touchdown remains safe',()=>game()(`
+ G.state='play';const p=G.helis[0];p.x=1000;p.y=GROUND-20;p.vy=200;update(.033);
+ const hp=p.hp;assert.ok(hp<100&&hp>40);assert.equal(G.stats.hardLandings,1);
+ for(let i=0;i<20;i++)update(.033);assert.equal(p.hp,hp);assert.equal(G.stats.hardLandings,1);
+ p.hp=100;p.y=GROUND-18;p.vy=40;update(.1);assert.equal(p.hp,100);
+`));
+test('camera look ahead eases through reversals and stays in world bounds',()=>game()(`
+ const p=G.helis[0];p.x=3000;p.vx=180;for(let i=0;i<30;i++)updateCamera(p,.1);
+ assert.ok(G.camX>p.x-W/2);const lead=G.cameraLead;p.vx=-180;updateCamera(p,.016);assert.ok(G.cameraLead>0&&G.cameraLead<lead);
+ p.x=0;for(let i=0;i<50;i++)updateCamera(p,.1);assert.ok(G.camX>=0);
+ cycleShake();assert.equal(SETTINGS.shake,.35);cycleShake();assert.equal(SETTINGS.shake,0);
+`));
+test('campaign capture, rescue delivery and escort progress through distinct missions',()=>game()(`
+ startCampaign();assert.equal(G.campaign,0);const first=G.bunkers[0].x;G.bunkers[0].owner=1;updateMission();assert.equal(G.state,'win');
+ nextSortie();assert.equal(G.campaign,1);assert.notEqual(G.bunkers[0].x,first);
+ const p=G.helis[0];p.x=2330;p.y=GROUND-30;troopTransfer(p);assert.equal(p.cargo,4);
+ p.x=PLAYER_X;p.service='hq';updateMission();assert.equal(G.stats.rescued,4);assert.equal(G.state,'win');assert.equal(p.cargo,0);
+ nextSortie();assert.equal(G.campaign,2);assert.ok(G.turrets.every(t=>t.side===-1));
+ const v=spawnUnit(1,'VAN');v.x=ENEMY_X;update(.001);assert.equal(G.state,'win');nextSortie();assert.equal(G.state,'menu');
+`));
+test('rescue casualties fail the mission and retry restores its objective',()=>game()(`
+ startCampaign(1);killUnit(G.units[0]);updateMission();assert.equal(G.state,'over');restartMission();
+ assert.equal(G.campaign,1);assert.equal(G.units.filter(u=>u.rescue).length,4);assert.equal(G.state,'play');
+`));
+test('replay is bounded, optional, and cannot mutate the debrief or recorded state',()=>game()(`
+ G.state='play';for(let i=0;i<100;i++){G.helis[0].x=500+i;recordReplay(.125);}
+ assert.equal(G.replayFrames.length,64);endGame(true,'Test');const score=G.score,x=G.helis[0].x,frames=JSON.stringify(G.replayFrames);
+ startReplay();assert.ok(G.replay);renderReplay();assert.equal(G.score,score);assert.equal(G.helis[0].x,x);assert.equal(JSON.stringify(G.replayFrames),frames);
+ stopReplay();assert.equal(G.replay,null);assert.equal(G.state,'win');
+`));
+test('rescue markers follow passengers home and stranded troops cannot capture bunkers',()=>game()(`
+ startCampaign(1);assert.equal(objectiveLocation().label,'Recover troops');
+ const p=G.helis[0];p.x=2330;p.y=GROUND-30;troopTransfer(p);
+ assert.equal(objectiveLocation().x,PLAYER_X);assert.ok(missionText().includes('Return to HQ'));
+ p.x=G.bunkers[0].x;troopTransfer(p);updateCapture(.1);assert.equal(G.bunkers[0].owner,-1);
+`));
+test('cosmetic remnants and impact particles remain bounded and distinct',()=>game()(`
+ impactEffect(1000,GROUND,'armor');assert.ok(G.parts.every(p=>p.add));G.parts=[];
+ impactEffect(1000,GROUND,'ground');assert.ok(G.parts.every(p=>!p.add));
+ for(let i=0;i<40;i++)killUnit(spawnUnit(-1,'INF'));assert.equal(G.casualties.length,30);
+ updateAtmosphere(10);assert.equal(G.casualties.length,0);
 `));

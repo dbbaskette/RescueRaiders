@@ -2,7 +2,7 @@ const {readFileSync}=require('node:fs');
 const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1]+'\n'+readFileSync('experience.js','utf8');
 function mobile(){
  const nodes=new Map(),events=new Map(),docEvents=new Map();
  const noop=()=>{},gradient={addColorStop:noop};
@@ -100,4 +100,23 @@ test('mobile engineers can be bought and passengers parachuted at altitude',()=>
  buttons[4].dispatchEvent({type:'click'});assert.equal(G.units[0].type,'ENG');
  const p=G.helis[0];p.cargo=2;p.y=300;G.paused=false;TOUCH.render();
  assert.equal(node('touch-cargo').hidden,false);assert.equal(node('touch-cargo').textContent,'Parachute 1');
+`));
+test('landed helicopter automatically boards troops without tapping the mobile button',()=>mobile()(`
+ emit('m-primary','click');const p=G.helis[0];Object.assign(p,{x:1000,y:GROUND-16,vx:0,vy:0});
+ const u=spawnUnit(1,'ENG');u.x=980;u.hp=17;
+ update(.4);TOUCH.render();assert.equal(p.cargo,1);assert.equal(p.cargoUnits[0].type,'ENG');
+ assert.equal(p.cargoUnits[0].hp,17);assert.equal(node('touch-cargo').textContent,'Drop 1 troops');
+ emit('touch-cargo','click');update(.4);assert.equal(p.cargo,0);
+`));
+test('mobile command tray shares orders, passenger selection and deployment',()=>mobile()(`
+ emit('m-primary','click');const p=G.helis[0];p.cargo=2;p.cargoUnits=[{type:'INF',hp:20},{type:'ENG',hp:17}];
+ emit('m-units','click');emit('m-hold','click');assert.equal(G.orders.mode,'hold');assert.ok(G.paused);
+ node('m-cargo-seats').children[1].dispatchEvent({type:'click'});assert.equal(G.selectedCargo,1);
+ emit('m-drop-selected','click');assert.equal(G.paratroopers[0].type,'ENG');assert.equal(p.cargo,1);
+ emit('m-shake','click');assert.equal(SETTINGS.shake,.35);emit('m-primary','click');assert.equal(G.paused,false);
+`));
+test('mobile campaign and optional replay return to the correct debrief',()=>mobile()(`
+ emit('m-campaign','click');assert.equal(G.campaign,0);recordReplay(.2);recordReplay(.2);endGame(true,'Test');TOUCH.render();
+ assert.equal(node('m-replay').hidden,false);emit('m-replay','click');TOUCH.render();assert.equal(node('m-modal').hidden,true);
+ emit('m-replay-close','click');TOUCH.render();assert.equal(node('m-modal').hidden,false);emit('m-primary','click');assert.equal(G.campaign,1);
 `));

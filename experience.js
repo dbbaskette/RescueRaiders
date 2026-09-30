@@ -1,19 +1,21 @@
 'use strict';
 // Shared mission, transport, command and presentation behavior for both interfaces.
 const MISSIONS=[
-  {name:'Foothold',brief:'Capture the marked forward bunker.',kind:'capture',bunkers:[1500,3300],turrets:[1100,2700]},
+  {name:'Foothold',brief:'Capture the marked bunker.',kind:'capture',bunkers:[1500,3300],turrets:[1100,2700]},
   {name:'Bring them home',brief:'Recover four stranded troops and return them to HQ.',kind:'rescue',bunkers:[1300,3600,6000],turrets:[1750,3100,5200]},
-  {name:'Breakthrough',brief:'Escort your Demo Van through the fortified line to enemy HQ.',kind:'escort',bunkers:[1900,3700,5500,7200],turrets:[1400,2900,4600,6300,7800]}
+  {name:'Breakthrough',brief:'Escort your Van to enemy HQ.',kind:'escort',bunkers:[1900,3700,5500,7200],turrets:[1400,2900,4600,6300,7800]}
 ];
 SETTINGS.shake=1;
 function initExperience(g){
   g.orders={mode:'advance',x:0};g.campaign=null;g.selectedCargo=0;g.casualties=[];
   g.replayFrames=[];g.replayClock=0;g.replay=null;g.cameraLead=0;
   Object.assign(g.stats,{rescued:0,convoyLost:0,lastLoss:'None',hardLandings:0});
+  if(typeof initOperations==='function')initOperations(g);
 }
 initExperience(G);
 function startCampaign(index=0){
-  index=clamp(index,0,MISSIONS.length-1);newGame();G.state='play';G.campaign=index;
+  index=clamp(index,0,MISSIONS.length-1);newGame();G.state='play';G.campaign=index;saveCheckpoint(index);
+  if(index===2)G.environment.night=true;
   const mission=MISSIONS[index],template=G.bunkers[0];
   G.bunkers=mission.bunkers.map(x=>({...template,x}));
   G.turrets=mission.turrets.map(x=>({x,y:GROUND-22,type:'TURRET',side:index===2?-1:0,hp:index===2?80:0,maxhp:100,cd:1}));
@@ -31,6 +33,7 @@ function nextSortie(){
 }
 function sortieLabel(){return G.campaign===null?'Fly again':G.state!=='win'?'Retry mission':G.campaign===2?'Campaign complete · Menu':'Next mission';}
 function missionText(){
+  if(G.tutorial)return G.tutorial.advanced?'Flight academy · Advanced operations':'Training sortie · Flight basics';
   if(G.campaign===null)return 'Quick battle · Escort your Van to enemy HQ';
   const m=MISSIONS[G.campaign],aboard=cargoManifest(G.helis[0]).filter(c=>c.rescue).length;
   return `${G.campaign+1}/3 ${m.name} · ${m.kind==='rescue'?(aboard?aboard+' aboard · Return to HQ':G.stats.rescued+'/4 home · Recover marked troops'):m.brief}`;
@@ -74,14 +77,20 @@ function cargoManifest(p){
 function selectCargo(index){G.selectedCargo=clamp(index,0,Math.max(0,G.helis[0].cargo-1));}
 function cycleCargo(){selectCargo((G.selectedCargo+1)%Math.max(1,G.helis[0].cargo));}
 function setOrder(mode){
-  if(!['advance','hold','rally'].includes(mode)||G.tutorial)return;
-  G.orders={mode,x:clamp(G.helis[0].x,80,WORLD-80)};
+  if(!['advance','hold','rally'].includes(mode)||G.tutorial&&!G.tutorial.advanced)return;
+  const order={mode,x:clamp(G.helis[0].x,80,WORLD-80)};
+  if(G.group==='all'){G.orders=order;for(const group in G.groupOrders)G.groupOrders[group]={...order};}
+  else G.groupOrders[G.group]=order;
+  if(G.tutorial?.advanced&&G.group==='armor'){if(mode==='hold')G.academyEvents.armorHold=true;if(mode==='rally'&&G.academyEvents.armorHold)G.academyEvents.armorRally=true;}
 }
 function commandMovement(u){
-  if(u.rescue)return {move:false,dir:u.side};
-  if(u.side!==1||G.tutorial||G.orders.mode==='advance')return {move:true,dir:u.side};
-  if(G.orders.mode==='hold')return {move:false,dir:u.side};
-  const delta=G.orders.x-u.x;return {move:Math.abs(delta)>45,dir:Math.sign(delta)||u.side};
+  if(u.rescue||u.pilot)return {move:false,dir:u.side};
+  if(G.tutorial&&!G.tutorial.advanced)return {move:true,dir:u.side};
+  if(u.side!==1)return enemyMovement(u);
+  const order=orderFor(u);
+  if(order.mode==='advance')return convoyMovement(u);
+  if(order.mode==='hold')return {move:false,dir:u.side};
+  const delta=order.x-u.x;return {move:Math.abs(delta)>45,dir:Math.sign(delta)||u.side};
 }
 function landingCue(p){
   if(p.dead||p.y<GROUND-160)return null;
@@ -110,7 +119,7 @@ function updateCamera(p,dt){
   G.cameraLead+=(desired-G.cameraLead)*(1-Math.exp(-2*dt));
   G.camX+=((p.x-W/2+G.cameraLead)-G.camX)*(1-Math.exp(-3.2*dt));G.camX=clamp(G.camX,0,WORLD-W);
 }
-function cycleShake(){SETTINGS.shake=SETTINGS.shake===1?.35:SETTINGS.shake===.35?0:1;}
+function cycleShake(){SETTINGS.shake=SETTINGS.shake===1?.35:SETTINGS.shake===.35?0:1;saveProgress();}
 function shakeLabel(){return SETTINGS.shake===1?'Full':SETTINGS.shake===0?'Off':'Reduced';}
 function impactEffect(x,y,kind){
   const armor=kind==='armor',grass=terrainAt(x)==='grass';
@@ -156,30 +165,75 @@ function drawTracks(u,x){
 function recordReplay(dt,force=false){
   if(G.tutorial||G.replay)return;G.replayClock+=dt;
   if(!force&&G.replayClock<.125)return;G.replayClock=0;
-  const {camX,time,anim,helis,units,bunkers,turrets,paratroopers,canopies,wrecks,decals,parts,bullets,shells,bombs,missiles,flares,casualties}=G;
-  // Missile target references are stripped; replay only renders the recorded geometry.
-  const frame={camX,time,anim,helis,units,bunkers,turrets,paratroopers,canopies,wrecks,decals,parts:parts.slice(-100),bullets,shells,bombs,missiles:missiles.map(m=>({...m,target:null})),flares,casualties};
+  const frame={camX:G.camX,time:G.time,anim:G.anim};
+  const previous=G.replayFrames.at(-1);frame.at=previous?previous.at+Math.max(.001,G.time-previous.time):0;
+  for(const name of ['helis','units','bunkers','turrets','paratroopers','canopies','wrecks','decals','parts','bullets','shells','bombs','missiles','flares','casualties']){
+    const entities=name==='parts'?G[name].slice(-100):G[name];
+    frame[name]=entities.map(entity=>{if(!entity.replayId)entity.replayId=G.nextReplayId++;return {...entity,target:null};});
+  }
   G.replayFrames.push(JSON.parse(JSON.stringify(frame)));if(G.replayFrames.length>64)G.replayFrames.shift();
+}
+function replayDuration(){const frames=G.replayFrames;return frames.length>1?frames.at(-1).at-frames[0].at:0;}
+function replayFocus(){
+  for(const frame of [...G.replayFrames].reverse()){
+    const van=frame.units.find(u=>u.type==='VAN'&&(u.side===1?u.x>ENEMY_X-110:u.x<PLAYER_X+110));
+    if(van)return {name:'units',id:van.replayId,label:'Van',x:van.x};
+    for(const name of ['missiles','bombs','shells']){
+      const projectile=frame[name].at(-1);if(projectile)return {name,id:projectile.replayId,label:'Ordnance',x:projectile.x};
+    }
+  }
+  return {name:'helis',id:G.replayFrames[0].helis[0].replayId,label:'Helicopter',x:G.helis[0].x};
 }
 function startReplay(){
   if(!['win','over'].includes(G.state)||G.replayFrames.length<2)return;
-  if(TOUCH.reset)TOUCH.reset();G.replay={time:0};syncAudioBus();
+  if(TOUCH.reset)TOUCH.reset();G.replay={time:0,speed:1,follow:true,focus:replayFocus()};syncAudioBus();
 }
 function stopReplay(){G.replay=null;}
+function toggleReplaySpeed(){if(G.replay)G.replay.speed=G.replay.speed===1?.35:1;}
+function toggleReplayFocus(){if(G.replay)G.replay.follow=!G.replay.follow;}
+function interpolatedReplay(time){
+  const frames=G.replayFrames,target=frames[0].at+Math.max(0,time);
+  let i=0;while(i<frames.length-1&&frames[i+1].at<=target)i++;
+  const a=frames[i],b=frames[Math.min(i+1,frames.length-1)],mix=clamp((target-a.at)/Math.max(.001,b.at-a.at),0,1);
+  const frame=JSON.parse(JSON.stringify(a));
+  for(const key of ['camX','time','anim'])frame[key]=a[key]+(b[key]-a[key])*mix;
+  for(const name of Object.keys(frame)){
+    if(!Array.isArray(frame[name]))continue;
+    const next=new Map(b[name].map(entity=>[entity.replayId,entity]));
+    for(const entity of frame[name]){
+      const after=next.get(entity.replayId);if(!after)continue;
+      for(const key of ['x','y','vx','vy','pitch','rotorPhase','phase','chuteAge','life','r','s'])
+        if(Number.isFinite(entity[key])&&Number.isFinite(after[key]))entity[key]+=(key==='rotorPhase'?(after[key]-entity[key]+Math.PI*2)%(Math.PI*2):after[key]-entity[key])*mix;
+    }
+  }
+  if(G.replay?.follow){
+    const focus=G.replay.focus;
+    // Retain the impact location after the tracked projectile disappears.
+    let entity=frame[focus.name].find(e=>e.replayId===focus.id);
+    if(!entity)for(let j=i;j>=0&&!entity;j--)entity=frames[j][focus.name].find(e=>e.replayId===focus.id);
+    if(entity)frame.camX=clamp(entity.x-W/2,0,WORLD-W);
+  }
+  return frame;
+}
 function renderReplay(){
-  const live=G,frame=live.replayFrames[Math.min(live.replayFrames.length-1,Math.floor(live.replay.time*8))];
+  const live=G,frame=interpolatedReplay(live.replay.time);
   cx.save();
   try{
-    G={...live,...JSON.parse(JSON.stringify(frame)),replayView:true,paused:true,buttons:[]};
+    G={...live,...frame,replayView:true,paused:true,buttons:[]};
     drawSky();drawBackdrop();drawHills();drawClouds();drawGround();drawDecals();drawWrecks();drawBases();
     for(const b of G.bunkers)drawBunker(b);drawEmplacements();drawRemnants();
-    for(const u of G.units)drawUnit(u);for(const h of G.helis)if(!h.dead)drawHeli(h);drawProjectiles();drawParts();
+    for(const u of G.units)drawUnit(u);for(const h of G.helis)if(!h.dead)drawHeli(h);drawProjectiles();drawParts();drawWeather();drawNight();
   }finally{G=live;cx.restore();}
-  cx.save();cx.fillStyle='rgba(9,18,24,.85)';cx.fillRect(W/2-150,18,300,42);cx.fillStyle='#d3dfcf';cx.font='14px monospace';cx.textAlign='center';cx.fillText('Final moments · Esc to return',W/2,44);cx.restore();
-  G.buttons=[{id:'replay_close',x:W/2-150,y:18,w:300,h:42,onClick:stopReplay}];
+  G.buttons=[];
+  if(!TOUCH.active){cx.save();
+    experienceButton('replay_close','Back to debrief [Esc]',300,18,220,stopReplay);
+    experienceButton('replay_speed',G.replay.speed===1?'Slow motion [Space]':'Speed: 0.35× [Space]',530,18,220,toggleReplaySpeed);
+    experienceButton('replay_focus',G.replay.follow?'Follow '+G.replay.focus.label+' [F]':'Original camera [F]',760,18,220,toggleReplayFocus);
+    cx.restore();
+  }
   if(TOUCH.active&&TOUCH.render)TOUCH.render();
 }
-function debriefDetails(){return `${G.stats.rescued} rescued · ${G.stats.bunkersCap} bases · ${G.stats.convoyLost} convoy losses · Last helicopter loss: ${G.stats.lastLoss}`;}
+function debriefDetails(){return `${G.stats.rescued} troops + ${G.stats.pilotsRescued} pilots rescued · ${G.stats.bunkersCap} bases · ${G.stats.convoyLost} convoy losses · Last helicopter loss: ${G.stats.lastLoss}`;}
 function experienceButton(id,label,x,y,w,action,active=false){
   G.buttons.push({id,x,y,w,h:28,onClick:action});cx.fillStyle=active?'#365445':'rgba(12,25,32,.9)';cx.fillRect(x,y,w,28);
   cx.strokeStyle=active?'#a3c9a4':'#52685f';cx.strokeRect(x,y,w,28);cx.fillStyle='#d4dfd0';cx.font='11px monospace';cx.textAlign='center';cx.fillText(label,x+w/2,y+18);
@@ -188,7 +242,7 @@ function drawExperienceUI(){
   if(TOUCH.active)return;cx.save();
   if(G.state==='play'&&!G.paused){
     cx.font='11px monospace';cx.fillStyle='#d0d9c6';cx.textAlign='center';cx.fillText(missionText(),644,27);
-    if(!G.tutorial)for(const [i,mode] of ['advance','hold','rally'].entries())experienceButton('order_'+mode,['Advance [Z]','Hold [X]','Rally here [V]'][i],424+i*146,39,138,()=>setOrder(mode),G.orders.mode===mode);
+    if(!G.tutorial||G.tutorial.advanced)for(const [i,mode] of ['advance','hold','rally'].entries())experienceButton('order_'+mode,['Advance [Z]','Hold [X]','Rally here [V]'][i],424+i*146,39,138,()=>setOrder(mode),activeOrder().mode===mode);
   }else if(G.state==='menu')experienceButton('campaign','Campaign · 3 missions [C]',820,580,240,()=>startCampaign());
   else if(G.paused)experienceButton('shake','Camera shake: '+shakeLabel(),490,432,300,cycleShake);
   else if(G.state==='win'||G.state==='over'){

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330" role="img" aria-labelledby="title desc">
+<title id="title">The Rescue Raiders combined arms loop</title><desc id="desc">Airlift infantry and engineers, secure a forward base, then escort a convoy with a tank leading, infantry and anti-aircraft support in the middle, and the Demo Van protected behind them.</desc>
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#182e30"/><stop offset="1" stop-color="#0b1821"/></linearGradient><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#c5d5bd" stroke-opacity=".05"/></pattern><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="m0 0 6 3-6 3" fill="none" stroke="#d3bb83"/></marker></defs>
+<rect width="1200" height="330" rx="16" fill="url(#bg)"/><rect width="1200" height="330" rx="16" fill="url(#grid)"/>
+<g font-family="system-ui,sans-serif" fill="#dce2cd"><text x="36" y="42" fill="#cbb57e" font-size="12" letter-spacing="4">FIELD DOCTRINE / COMBINED ARMS</text><text x="36" y="81" font-size="29" font-weight="700">Fly the helicopter. Command the battlefield.</text></g>
+<g stroke="#6a8a7c" fill="none"><path d="M398 114v176M783 114v176"/><path d="M36 248H1164" stroke-dasharray="3 7"/></g>
+<g font-family="system-ui,sans-serif"><g fill="#d4bf8c" font-size="13" font-weight="700" letter-spacing="2"><text x="36" y="132">01 / AIRLIFT</text><text x="434" y="132">02 / SECURE</text><text x="820" y="132">03 / ESCORT</text></g>
+<g fill="#93b4a0"><path d="M88 176h53l23 12-13 12h-38l-30-15-28-3-8-7 41 6zM104 166h7v13h-7zM63 163h87v3H63zM102 210h42v3h-42z"/><path d="M234 211q21-39 43 0z" fill="none" stroke="#93b4a0" stroke-width="2"/><path d="m234 211 21 25 22-25m-21-25v50" fill="none" stroke="#93b4a0"/><circle cx="255" cy="239" r="4"/>
+<path d="M510 243v-34l12-17h99l12 17v34zm23-11h20v-17h-20zm45 0h20v-17h-20z" fill-rule="evenodd"/><path d="M644 243h80m-44-15v30m-18-16h35" stroke="#93b4a0" stroke-width="3"/>
+<path d="M1030 231h81v11h-81zm12-13h48v13h-48zm17-10h23v10h-23zm19 1h38v4h-38zM895 231h42v12h-42v-21h29v9zM953 236h39v7h-39zm9-6 17-19 4 3-16 19z"/>
+<circle cx="1012" cy="222" r="4"/><path d="M1009 228h6v10h-6zm0 10h2v7h-2zm4 0h2v7h-2z"/></g>
+<g fill="none" stroke="#d3bb83" stroke-width="1.5" marker-end="url(#arrow)"><path d="M169 188q43-16 69 3" stroke-dasharray="4 5"/><path d="M886 184h244"/></g>
+<g fill="#c5d2c7" font-size="15"><text x="36" y="278">Deliver the right people.</text><text x="434" y="278">Capture, rebuild, refuel.</text><text x="820" y="278">Keep the Van behind its armor.</text></g>
+<g fill="#8da298" font-size="12"><text x="36" y="301">4 seats · selective drops · parachutes</text><text x="434" y="301">Engineers repair · infantry capture</text><text x="820" y="301">Group orders · AA cover · formation spacing</text></g></g></svg>

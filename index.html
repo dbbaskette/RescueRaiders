@@ -12,8 +12,8 @@
   canvas{
     width:min(100vw,calc(100vh*16/9));
     height:min(calc(100vw*9/16),100vh);
-    image-rendering:pixelated;
-    box-shadow:0 0 80px rgba(90,130,255,.18);
+    image-rendering:auto;
+    box-shadow:0 0 80px rgba(0,0,0,.35);
     background:#000;
     user-select:none;
     -webkit-user-select:none;
@@ -84,6 +84,19 @@ function sprImg(name,side){
   if(s.img&&s.img.complete&&s.img.naturalWidth>0)return s.img;
   return (side<0&&s.red)?s.red:s.img;
 }
+const SPRITE_MATERIALS=new Map();
+function materialSprite(img,name,side,w){
+  if(typeof document.createElement!=='function')return img;
+  const key=name+':'+side+':'+w;
+  if(SPRITE_MATERIALS.has(key))return SPRITE_MATERIALS.get(key);
+  const surface=document.createElement('canvas');
+  surface.width=Math.ceil(w*2);surface.height=Math.ceil(surface.width*img.height/img.width);
+  const ctx=surface.getContext('2d');
+  ctx.filter=side<0?'saturate(.48) brightness(.9)':'saturate(.78) brightness(.98)';
+  ctx.drawImage(img,0,0,surface.width,surface.height);
+  if(SPRITE_MATERIALS.size>=64)SPRITE_MATERIALS.delete(SPRITE_MATERIALS.keys().next().value);
+  SPRITE_MATERIALS.set(key,surface);return surface;
+}
 function drawSprite(name,side,px,py,w,flip,rot,bottom){
   const img=sprImg(name,side);
   if(!img||!img.complete||!img.width)return;
@@ -91,7 +104,7 @@ function drawSprite(name,side,px,py,w,flip,rot,bottom){
   cx.save();cx.translate(px,py);
   if(rot)cx.rotate(rot);
   if(flip)cx.scale(-1,1);
-  cx.drawImage(img,-w/2,bottom?-h:-h/2,w,h);
+  cx.drawImage(materialSprite(img,name,side,w),-w/2,bottom?-h:-h/2,w,h);
   cx.restore();
 }
 
@@ -175,7 +188,7 @@ function mkHeli(side){
     hp:100,maxhp:100,dead:false,respawn:0,
     cdGun:0,cdBomb:0,cdMis:0,cableCd:0,
     bombs:8,mis:4,flares:3,cargo:0,cargoUnits:[],seed:Math.random()*10,
-    aiT:0,fuel:100,reserve:RESERVE_SECONDS,washTimer:0};
+    aiT:0,fuel:100,reserve:RESERVE_SECONDS,washTimer:0,pitch:0,rotorPhase:0,rotorSpeed:1};
 }
 
 function enginePowered(h){return h.fuel>0||h.reserve>0;}
@@ -432,7 +445,12 @@ function drawEmplacements(){
   for(const t of G.turrets){
     const x=t.x-G.camX;if(!onScreen(t.x))continue;
     cx.fillStyle=t.hp>0?'#66716a':'#494b48';
+    groundShadow(t.x,4,48);
     cx.fillRect(x-20,GROUND-10,40,10);cx.fillRect(x-12,GROUND-25,24,15);
+    cx.fillStyle='#929381';cx.fillRect(x-12,GROUND-25,24,2);
+    cx.fillStyle='#313931';cx.fillRect(x-8,GROUND-19,16,8);
+    cx.fillStyle='#a5a58d';for(const dx of [-9,9])cx.fillRect(x+dx,GROUND-20,1,2);
+    cx.fillStyle=t.hp>0?'#74786b':'#494b48';
     cx.save();cx.translate(x,GROUND-24);cx.rotate(t.side===-1?-2.6:-.55);cx.fillRect(0,-3,30,6);cx.restore();
     cx.fillStyle='#101820';cx.fillRect(x-20,GROUND-39,40,4);
     cx.fillStyle=t.side===1?'#72d7c0':t.side===-1?'#f48277':'#8b959e';cx.fillRect(x-20,GROUND-39,40*t.hp/t.maxhp,4);
@@ -650,7 +668,7 @@ function update(dt){
         if(h.side>0&&G.lives<=0)continue;
         if(h.side===1&&G.tutorial){startTutorial();return;}
         Object.assign(h,{dead:false,hp:h.maxhp,x:h.side>0?PLAYER_X+140:ENEMY_X-140,
-          y:300,vx:0,vy:0,bombs:8,mis:4,flares:3,cargo:0,cargoUnits:[],fuel:100,reserve:RESERVE_SECONDS,rearming:false,service:null,cdGun:0,cdBomb:0,cdMis:0});
+          y:300,vx:0,vy:0,bombs:8,mis:4,flares:3,cargo:0,cargoUnits:[],pitch:0,rotorPhase:0,rotorSpeed:1,fuel:100,reserve:RESERVE_SECONDS,rearming:false,service:null,cdGun:0,cdBomb:0,cdMis:0});
       }
       continue;
     }
@@ -681,6 +699,7 @@ function update(dt){
       h.fuel=Math.max(0,h.fuel-FUEL_BURN*(1+Math.abs(h.vx)/430)*dt);
       if(h.fuel<=0)h.reserve=Math.max(0,h.reserve-dt);
     }
+    updateAirframe(h,dt);
     h.washTimer-=dt;
     if(h.y>GROUND-110&&enginePowered(h)&&h.washTimer<=0){
       h.washTimer=.065;emitGroundWash(h.x,1-(GROUND-h.y)/130);
@@ -1153,18 +1172,29 @@ function drawDamageEdges(){
   cx.restore();
 }
 
+// Visual motion is integrated in simulation, so pausing freezes the airframe.
+function updateAirframe(h,dt){
+  const target=clamp(h.vx*.0011,-.23,.23);
+  h.pitch=(h.pitch||0)+(target-(h.pitch||0))*(1-Math.exp(-4*dt));
+  const rpm=enginePowered(h)?1:(h.y<GROUND-20?.48:0);
+  h.rotorSpeed=(h.rotorSpeed??1)+(rpm-(h.rotorSpeed??1))*(1-Math.exp(-1.8*dt));
+  h.rotorPhase=((h.rotorPhase||0)+h.rotorSpeed*38*dt)%(Math.PI*2);
+}
+function shadowGeometry(alt,width){
+  alt=Math.max(0,alt);
+  return {offset:-alt*.42,radius:width*.5+alt*.075,opacity:.34*Math.exp(-alt/360),height:4+alt*.025};
+}
+function groundShadow(wx,alt,width){
+  const sh=shadowGeometry(alt,width),x=wx-G.camX+sh.offset;
+  cx.save();cx.translate(x,GROUND+2);cx.scale(1,sh.height/sh.radius);
+  const g=cx.createRadialGradient(0,0,0,0,0,sh.radius);
+  g.addColorStop(0,'rgba(12,15,17,'+sh.opacity+')');g.addColorStop(.4,'rgba(12,15,17,'+sh.opacity*.65+')');g.addColorStop(1,'rgba(12,15,17,0)');
+  cx.fillStyle=g;cx.fillRect(-sh.radius,-sh.radius,sh.radius*2,sh.radius*2);cx.restore();
+}
 function drawSky(){
-  const g=cx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#0d1030');g.addColorStop(.55,'#33224e');
-  g.addColorStop(.82,'#7e3b47');g.addColorStop(1,'#c96a45');
+  const g=cx.createLinearGradient(0,0,0,GROUND);
+  g.addColorStop(0,'#566674');g.addColorStop(.55,'#afa79b');g.addColorStop(1,'#dbb38b');
   cx.fillStyle=g;cx.fillRect(0,0,W,H);
-  cx.fillStyle='#fff';
-  for(let i=0;i<40;i++){
-    const sx=hash(i)*W,sy=hash(i+99)*220;
-    cx.globalAlpha=.12+.3*Math.abs(Math.sin(G.anim+i));
-    cx.fillRect(sx,sy,2,2);
-  }
-  cx.globalAlpha=1;
 }
 function drawBackdrop(){
   const img=SPR.backdrop;
@@ -1184,12 +1214,16 @@ function drawBackdrop(){
   }
   // atmospheric blend: night sky above, haze at horizon
   const g=cx.createLinearGradient(0,0,0,GROUND);
-  g.addColorStop(0,'rgba(13,16,48,.88)');g.addColorStop(.45,'rgba(40,28,66,.35)');
-  g.addColorStop(1,'rgba(126,59,71,0)');
+  g.addColorStop(0,'rgba(64,79,88,.22)');g.addColorStop(.45,'rgba(190,178,156,.08)');
+  g.addColorStop(1,'rgba(80,81,67,.12)');
   cx.fillStyle=g;cx.fillRect(0,0,W,GROUND);
 }
 function drawHills(){
-  hillLayer(G.camX*.3,486,60,700,'rgba(22,18,40,.85)');
+  // A translucent middle-distance ridge preserves detail in the photographic terrain.
+  hillLayer(G.camX*.3,578,24,700,'rgba(72,75,66,.24)');
+  const mist=cx.createLinearGradient(0,400,0,GROUND);
+  mist.addColorStop(0,'rgba(204,193,172,0)');mist.addColorStop(.42,'rgba(204,193,172,.07)');mist.addColorStop(1,'rgba(204,193,172,0)');
+  cx.fillStyle=mist;cx.fillRect(0,400,W,GROUND-400);
 }
 function hillLayer(off,base,amp,step,col){
   cx.fillStyle=col;
@@ -1203,36 +1237,29 @@ function hillLayer(off,base,amp,step,col){
 }
 function drawGround(){
   const g=cx.createLinearGradient(0,GROUND,0,H);
-  g.addColorStop(0,'#4d4030');g.addColorStop(.14,'#332a1e');g.addColorStop(1,'#14100c');
+  g.addColorStop(0,'#645f4c');g.addColorStop(.24,'#595043');g.addColorStop(1,'#2e3029');
   cx.fillStyle=g;cx.fillRect(0,GROUND,W,H-GROUND);
-  cx.fillStyle='#6b5a40';cx.fillRect(0,GROUND,W,3);
-  // dirt road with wheel ruts
-  cx.fillStyle='rgba(90,74,52,.55)';cx.fillRect(0,GROUND+10,W,26);
-  cx.fillStyle='rgba(40,32,22,.5)';
-  cx.fillRect(0,GROUND+16,W,3);cx.fillRect(0,GROUND+27,W,3);
-  for(let wx=Math.floor(G.camX/320)*320;wx<G.camX+W;wx+=320){
-    if(terrainAt(wx)==='grass'){
-      cx.fillStyle='rgba(75,87,43,.5)';cx.fillRect(wx-G.camX,GROUND,320,10);
-      cx.fillStyle='rgba(52,65,31,.2)';cx.fillRect(wx-G.camX,GROUND+37,320,12);
+  // Broken road shoulders and wheel ruts; every detail is anchored in world coordinates.
+  const step=TOUCH.active?16:8,start=Math.floor(G.camX/step)*step;
+  for(let wx=start;wx<G.camX+W+step;wx+=step){
+    const x=wx-G.camX,n=hash(wx+73),grass=terrainAt(wx)==='grass';
+    cx.fillStyle=grass?'#555c3e':'#72634f';cx.fillRect(x,GROUND-2-n*3,step,5+n*4);
+    for(const lane of [14,29]){
+      cx.fillStyle='rgba(32,29,24,'+(.12+n*.2)+')';cx.fillRect(x,GROUND+lane+Math.sin(wx*.015)*1.3,step+1,2+n*2);
+      cx.fillStyle='rgba(178,156,122,.12)';cx.fillRect(x,GROUND+lane+4,step,1);
     }
-  }
-  // texture: stones / tufts (world anchored)
-  const start=Math.floor(G.camX/48)*48;
-  for(let wx=start;wx<G.camX+W+48;wx+=48){
-    const h1=hash(wx),h2=hash(wx*1.7);
-    cx.fillStyle=h2>.5?'rgba(20,16,11,.7)':'rgba(120,100,70,.35)';
-    cx.fillRect(wx-G.camX,GROUND+44+h1*48,20+h1*26,3);
-    if(terrainAt(wx)==='grass'){ // grass responds to wind and nearby rotor wash
-      cx.strokeStyle='rgba(74,84,48,.8)';cx.lineWidth=1.5;
-      const tx=wx-G.camX+20,ty=GROUND+6;
-      let bend=Math.sin(G.time*2+wx*.1)*windAt(G.time)*.07;
-      for(const h of G.helis)if(!h.dead&&h.fuel>0&&h.y>GROUND-110&&Math.abs(h.x-wx)<100)
-        bend+=Math.sign(wx-h.x)*(1-Math.abs(wx-h.x)/100)*9;
-      cx.beginPath();
-      cx.moveTo(tx,ty);cx.lineTo(tx-3+bend,ty-7);
-      cx.moveTo(tx,ty);cx.lineTo(tx+1+bend,ty-9);
-      cx.moveTo(tx,ty);cx.lineTo(tx+4+bend,ty-6);
-      cx.stroke();
+    for(let j=0;j<4;j++){
+      const q=hash(wx*3+j*129),y=GROUND+7+q*88,r=.5+hash(wx+j*83)*2;
+      cx.fillStyle=q>.55?'rgba(177,161,132,.3)':'rgba(22,25,20,.32)';
+      cx.beginPath();cx.ellipse(x+j*step/4,y,r*1.7,r*.5,0,0,7);cx.fill();
+    }
+    if(grass){
+      let bend=Math.sin(G.time*1.4+wx*.1)*windAt(G.time)*.05;
+      for(const h of G.helis)if(!h.dead&&enginePowered(h)&&h.y>GROUND-110&&Math.abs(h.x-wx)<100)
+        bend+=Math.sign(wx-h.x)*(1-Math.abs(wx-h.x)/100)*8;
+      cx.strokeStyle=n>.5?'#797b50':'#434d35';cx.lineWidth=.8;
+      cx.beginPath();cx.moveTo(x,GROUND+3);cx.lineTo(x-2+bend,GROUND-3-n*7);
+      cx.moveTo(x+3,GROUND+3);cx.lineTo(x+5+bend,GROUND-n*9);cx.stroke();
     }
   }
 }
@@ -1240,6 +1267,7 @@ function drawBase(side){
   const bx=(side>0?PLAYER_X:ENEMY_X)-G.camX;
   if(bx<-320||bx>W+320)return;
   const col=side>0?'#4db2ff':'#ff5548';
+  groundShadow(side>0?PLAYER_X:ENEMY_X,8,290);
   drawSprite('hq',side,bx,GROUND-6,300,false,0,true);
   // landing pad
   const px0=bx+62;
@@ -1349,7 +1377,7 @@ function drawBunker(b){
     const isEnemy=b.owner!==1;
     const urgent=cableIsUrgent(b);
     // Core tension wire
-    cx.strokeStyle=isEnemy?'#f0f4fc':'#80c5ff';
+    cx.strokeStyle=isEnemy?'#b1aea3':'#809994';
     cx.lineWidth=1.8;
     cx.beginPath();cx.moveTo(x,by+26);cx.lineTo(x,topDomeY);cx.stroke();
 
@@ -1365,6 +1393,7 @@ function drawBunker(b){
   }
 
   // dome
+  groundShadow(b.x,4,110);
   drawSprite('bunker',b.owner,x,GROUND,110,false,0,true);
   if(b.capPulse>0){
     cx.strokeStyle='rgba(255,255,255,'+b.capPulse+')';cx.lineWidth=3;
@@ -1406,6 +1435,7 @@ function drawUnit(u){
   const x=u.x-G.camX;
   if(x<-140||x>W+140)return;
   const st=UT[u.type],name=UNIT_SPR[u.type],cfg=SPR_CFG[name];
+  groundShadow(u.x,5,st.w*1.4);
   // contact shadow
   cx.fillStyle='rgba(0,0,0,.4)';
   cx.beginPath();cx.ellipse(x,GROUND-2,st.w*.5,5,0,0,7);cx.fill();
@@ -1435,35 +1465,24 @@ function drawUnit(u){
 function drawHeli(h){
   const x=h.x-G.camX;
   if(x<-170||x>W+170)return;
-  // soft ground shadow, shrinks with altitude
-  const alt=GROUND-h.y;
-  const sa=clamp(.4-alt/1100,.05,.4);
-  const shadow=cx.createRadialGradient(x,GROUND-2,1,x,GROUND-2,66);
-  shadow.addColorStop(0,'rgba(0,0,0,'+sa+')');shadow.addColorStop(1,'rgba(0,0,0,0)');
-  cx.fillStyle=shadow;
-  cx.beginPath();
-  cx.ellipse(x,GROUND-2,66*clamp(1-alt/1600,.35,1),6,0,0,7);
-  cx.fill();
-  const tilt=clamp(h.vx*.0005,-.22,.22);
+  groundShadow(h.x,GROUND-h.y,130);
+  const tilt=h.pitch||0,phase=h.rotorPhase||0;
   drawSprite('heli',h.side,x,h.y,130,h.dir!==-1,tilt,false);
-  // animated main rotor: sweeping blade + blur disc at the mast
-  const flip=h.dir!==-1;
-  const mx=x+(flip?9:-9),my=h.y-13;
-  const ra=G.anim*26+h.seed*7;
-  const sw=Math.cos(ra)*60,th=Math.sin(ra)*7;
-  cx.save();
-  cx.strokeStyle='rgba(228,235,246,.8)';cx.lineWidth=2.5;
-  cx.beginPath();cx.moveTo(mx-sw,my-th);cx.lineTo(mx+sw,my+th);cx.stroke();
-  cx.globalAlpha=.25;cx.lineWidth=5;
-  cx.beginPath();cx.ellipse(mx,my,62,7,0,0,7);cx.stroke();
+  // All rotor geometry shares the airframe transform, including its mast and tail.
+  const mx=x+(h.dir===1?9:-9),my=h.y-13;
+  cx.save();cx.translate(x,h.y);cx.rotate(tilt);
+  const mast=h.dir===1?9:-9;
+  cx.fillStyle='rgba(170,177,168,'+(.07*(h.rotorSpeed??1))+')';
+  cx.beginPath();cx.ellipse(mast,-13,62,5.5,0,0,Math.PI*2);cx.fill();
+  for(let i=0;i<5;i++){
+    const a=phase-i*.19,sw=Math.cos(a)*61,depth=Math.sin(a)*5;
+    cx.strokeStyle='rgba(203,207,195,'+(.34-i*.055)+')';cx.lineWidth=1.4;
+    cx.beginPath();cx.moveTo(mast-sw,-13-depth);cx.lineTo(mast+sw,-13+depth);cx.stroke();
+  }
+  cx.strokeStyle='rgba(187,192,177,.5)';cx.lineWidth=1.2;
+  const tail=-h.dir*56;
+  for(let i=0;i<2;i++){const a=phase*1.7+i*Math.PI/2;cx.beginPath();cx.moveTo(tail-Math.cos(a)*3,-6-Math.sin(a)*9);cx.lineTo(tail+Math.cos(a)*3,-6+Math.sin(a)*9);cx.stroke();}
   cx.restore();
-  // tail rotor
-  const tx=x-h.dir*56,ty=h.y-6;
-  const ta=G.anim*34+h.seed*3;
-  cx.save();cx.strokeStyle='rgba(228,235,246,.6)';cx.lineWidth=2;
-  cx.beginPath();
-  cx.moveTo(tx,ty-Math.cos(ta)*9);cx.lineTo(tx+Math.sin(ta)*3,ty+Math.cos(ta)*9);
-  cx.stroke();cx.restore();
   // cargo / rearm labels
   cx.textAlign='center';
   if(h.cargo>0&&!TOUCH.active){
@@ -1534,7 +1553,7 @@ function drawProjectiles(){
     const x=b.x-G.camX;
     cx.globalCompositeOperation='lighter';
     cx.fillStyle='rgba(255,170,60,.35)';cx.fillRect(x-7,b.y-2.5,14,5);
-    cx.fillStyle='#fff6d0';cx.fillRect(x-4,b.y-1,9,2);
+    cx.strokeStyle='#fff0c4';cx.lineWidth=1.2;cx.beginPath();cx.moveTo(x,b.y);cx.lineTo(x-b.vx*.012,b.y-b.vy*.012);cx.stroke();
   }
   cx.globalCompositeOperation='lighter';
   for(const s of G.shells){
@@ -1547,9 +1566,9 @@ function drawProjectiles(){
   cx.globalCompositeOperation='source-over';
   for(const b of G.bombs){
     const x=b.x-G.camX;
-    cx.fillStyle='#262a33';
-    cx.beginPath();cx.ellipse(x,b.y,6,3.4,0,0,7);cx.fill();
-    cx.fillStyle='#7d838f';cx.fillRect(x-1,b.y-6,2,4);
+    cx.save();cx.translate(x,b.y);cx.rotate(Math.atan2(b.vy,b.vx));
+    cx.fillStyle='#353b36';cx.beginPath();cx.ellipse(0,0,7,3,0,0,7);cx.fill();
+    cx.fillStyle='#92947f';cx.fillRect(-6,-4,2,8);cx.fillStyle='#b0ab83';cx.fillRect(1,-2,2,4);cx.restore();
   }
   for(const m of G.missiles){
     const x=m.x-G.camX;
@@ -1573,6 +1592,7 @@ function drawParts(){
   cx.save();
   for(const p of G.parts){
     const x=p.x-G.camX;
+    if(x < -150||x > W+150)continue;
     if(p.ring){
       cx.globalCompositeOperation='lighter';
       cx.globalAlpha=clamp(p.life*2.4,0,1)*.8;
@@ -1589,6 +1609,10 @@ function drawParts(){
       continue;
     }
     const s=p.add?p.s*1.4:p.s;
+    if(s>3){
+      const puff=cx.createRadialGradient(x-s*.15,p.y-s*.2,0,x,p.y,s);
+      puff.addColorStop(0,p.c);puff.addColorStop(.35,p.c);puff.addColorStop(1,'transparent');cx.fillStyle=puff;
+    }
     cx.beginPath();cx.arc(x,p.y,s,0,7);cx.fill();
   }
   cx.restore();
@@ -1596,7 +1620,7 @@ function drawParts(){
 }
 function drawVignette(){
   const g=cx.createRadialGradient(W/2,H/2,H*.5,W/2,H/2,H*1.08);
-  g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.5)');
+  g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.28)');
   cx.fillStyle=g;cx.fillRect(0,0,W,H);
 }
 

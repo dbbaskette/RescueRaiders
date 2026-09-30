@@ -40,7 +40,7 @@ Landing lights, turret searchlights, muzzle flashes and illuminated pads pick ou
 
 ## A flight deck for your phone
 
-Open the same game on a phone or tablet in **landscape**. Steer with one thumb and operate weapons with the other. The **Command** panel pauses the battle for purchases, group orders and passenger selection. Rotation or leaving the page pauses safely.
+Open the same game on a phone or tablet in **landscape**. Steer with one thumb and operate weapons with the other. The **Command** panel pauses the battle for purchases, group orders and passenger selection. Menus support finger scrolling, buttons have at least 44-pixel touch targets, and layouts respect screen cutouts. Rotation or leaving the page pauses safely.
 
 ![Actual mobile interface with flight joystick, weapons, compact radar and return guidance](docs/media/mobile-operations.png)
 

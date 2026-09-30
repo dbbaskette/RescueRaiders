@@ -4,7 +4,7 @@ body.touch-mode #game { touch-action:none; height:min(calc(100vw * 9/16),100dvh)
 body.touch-mode #mobile-ui { display:block; position:fixed; inset:0; z-index:5; color:#e5f1ef; font:600 12px system-ui,sans-serif; pointer-events:none; -webkit-user-select:none; user-select:none }
 #mobile-ui * { box-sizing:border-box }
 #mobile-ui [hidden] { display:none!important }
-#mobile-ui button { pointer-events:auto; touch-action:none; color:#d9ebe9; background:rgba(12,24,33,.88); border:1px solid #50716e; border-radius:12px; min-height:44px; padding:8px 12px; font:700 12px system-ui,sans-serif; -webkit-tap-highlight-color:transparent }
+#mobile-ui button { pointer-events:auto; touch-action:none; color:#d9ebe9; background:rgba(12,24,33,.88); border:1px solid #50716e; border-radius:12px; min-height:44px; min-width:44px; padding:8px 12px; font:700 12px system-ui,sans-serif; -webkit-tap-highlight-color:transparent }
 #mobile-ui button:active,#mobile-ui button.held { background:#325c58; border-color:#b5ffdc }
 #mobile-ui button:focus-visible { outline:2px solid #ffd97a; outline-offset:2px }
 #mobile-ui button:disabled { opacity:.4 }
@@ -33,7 +33,7 @@ body.touch-mode #mobile-ui { display:block; position:fixed; inset:0; z-index:5; 
 #mobile-ui #touch-bomb { border-color:#ac965c }
 #mobile-ui #touch-cargo { position:absolute; left:50%; bottom:max(20px,env(safe-area-inset-bottom)); transform:translateX(-50%); background:#213e36ed }
 #mobile-ui #cancel-bomb { grid-column:2; grid-row:3; color:#ffdc99 }
-#mobile-ui .modal { pointer-events:auto; position:absolute; inset:0; background:rgba(3,9,17,.88); display:grid; place-items:center; padding:14px max(20px,env(safe-area-inset-left)); overflow:auto }
+#mobile-ui .modal { pointer-events:auto; position:absolute; inset:0; background:rgba(3,9,17,.88); display:grid; place-items:center; padding:max(14px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left)); overflow:auto }
 #mobile-ui .panel { max-width:560px; width:100%; padding:22px; border:1px solid #537571; border-radius:18px; background:linear-gradient(140deg,#142a2b,#0b1524); box-shadow:0 18px 60px #0008 }
 #mobile-ui .eyebrow { color:#8dc7b5; letter-spacing:3px; font-size:10px; margin:0 0 8px }
 #mobile-ui h1 { font-size:clamp(22px,4vw,34px); margin:0 0 10px; letter-spacing:1px }
@@ -58,7 +58,7 @@ body.touch-mode #mobile-ui { display:block; position:fixed; inset:0; z-index:5; 
 }
 
 #mobile-ui .difficulty-options { display:flex; gap:7px; margin:10px 0 14px }
-#mobile-ui .difficulty-options button { flex:1; min-height:36px }
+#mobile-ui .difficulty-options button { flex:1; min-height:44px }
 #mobile-ui .difficulty-options button.selected { background:#315d4b; border-color:#a3d7ad }
 #mobile-ui #m-training { position:absolute; left:50%; bottom:74px; transform:translateX(-50%); width:calc(100% - 320px); max-width:370px; padding:6px; background:#10251ddd; border-radius:6px; color:#b9dfc8; text-align:center; font-size:11px; line-height:1.4 }
 #mobile-ui #m-van { color:#c8d9cc; margin-top:4px; font-size:11px }
@@ -76,12 +76,16 @@ body.touch-mode #mobile-ui { display:block; position:fixed; inset:0; z-index:5; 
 #mobile-ui .cargo-row { display:grid; grid-template-columns:repeat(4,1fr); gap:6px }
 #mobile-ui .cargo-row button { min-height:44px; padding:6px; font-size:11px }
 #mobile-ui button.selected { background:#355b4a; border-color:#c5d9ab }
-#mobile-ui #m-replay-controls { position:absolute; right:12px; top:12px; display:flex; gap:6px }
+#mobile-ui #m-replay-controls { position:absolute; right:max(12px,env(safe-area-inset-right)); top:max(12px,env(safe-area-inset-top)); max-width:calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right) - 24px); display:flex; flex-wrap:wrap; gap:6px }
 #mobile-ui .modal { align-items:safe center }
-#mobile-ui .panel { max-height:calc(100dvh - 28px); overflow:auto }
+#mobile-ui .panel { max-height:calc(100dvh - max(14px,env(safe-area-inset-top)) - max(14px,env(safe-area-inset-bottom))); overflow:auto; overscroll-behavior:contain }
 
 #mobile-ui .panel-actions { position:sticky; bottom:-1px; padding-top:8px; background:#11232b }
 
 #mobile-ui #m-navigation { font-size:10px; line-height:1.35; color:#b9caba; margin-top:5px }
 #mobile-ui #m-navigation.urgent { color:#ffcd91 }
 #mobile-ui #m-operations-menu { display:grid; grid-template-columns:1fr 1fr }
+
+/* Menus scroll with a finger even when the swipe starts on a button.
+   Flight controls retain exclusive pointer ownership and touch-action:none. */
+#mobile-ui .modal, #mobile-ui .modal .panel, #mobile-ui .modal button { touch-action:pan-y }

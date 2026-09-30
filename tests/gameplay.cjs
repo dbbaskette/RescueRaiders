@@ -228,3 +228,23 @@ test('missiles track emplacements and gunfire can hit descending troops',()=>gam
  G.bullets.push({x:u.x,y:300,vx:0,vy:0,life:1,side:1,dmg:30});updateProjectiles(.016);
  assert.equal(G.paratroopers.length,0);
 `));
+test('visual aircraft pitch smooths consistently across simulation rates',()=>game()(`
+ const a=mkHeli(1),b=mkHeli(1);a.vx=b.vx=180;
+ for(let i=0;i<30;i++)updateAirframe(a,1/30);
+ for(let i=0;i<144;i++)updateAirframe(b,1/144);
+ assert.ok(Math.abs(a.pitch-b.pitch)<1e-10);assert.ok(a.pitch>0&&a.pitch<.23);
+ const before=a.pitch;updateAirframe(a,0);assert.equal(a.pitch,before);
+ a.vx=-100;updateAirframe(a,1);assert.ok(a.pitch<0);
+`));
+test('rotors wind down on fuel exhaustion and stop after landing',()=>game()(`
+ const h=mkHeli(1);h.fuel=0;h.reserve=0;updateAirframe(h,2);
+ assert.ok(h.rotorSpeed<1&&h.rotorSpeed>.48);assert.ok(h.rotorPhase>=0&&h.rotorPhase<Math.PI*2);
+ h.y=GROUND-16;updateAirframe(h,5);assert.ok(h.rotorSpeed<.001);
+ h.fuel=20;updateAirframe(h,2);assert.ok(h.rotorSpeed>.9);
+`));
+test('shadow projection softens with altitude and remains finite on landing',()=>game()(`
+ const near=shadowGeometry(10,130),high=shadowGeometry(300,130),ground=shadowGeometry(-1,130);
+ assert.ok(high.radius>near.radius);assert.ok(high.height>near.height);
+ assert.ok(high.opacity<near.opacity);assert.ok(high.offset<near.offset);
+ assert.equal(Math.abs(ground.offset),0);assert.ok(ground.radius>0);
+`));

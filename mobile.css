@@ -76,8 +76,12 @@ body.touch-mode #mobile-ui { display:block; position:fixed; inset:0; z-index:5; 
 #mobile-ui .cargo-row { display:grid; grid-template-columns:repeat(4,1fr); gap:6px }
 #mobile-ui .cargo-row button { min-height:44px; padding:6px; font-size:11px }
 #mobile-ui button.selected { background:#355b4a; border-color:#c5d9ab }
-#mobile-ui #m-replay-close { position:absolute; right:12px; top:12px }
+#mobile-ui #m-replay-controls { position:absolute; right:12px; top:12px; display:flex; gap:6px }
 #mobile-ui .modal { align-items:safe center }
 #mobile-ui .panel { max-height:calc(100dvh - 28px); overflow:auto }
 
 #mobile-ui .panel-actions { position:sticky; bottom:-1px; padding-top:8px; background:#11232b }
+
+#mobile-ui #m-navigation { font-size:10px; line-height:1.35; color:#b9caba; margin-top:5px }
+#mobile-ui #m-navigation.urgent { color:#ffcd91 }
+#mobile-ui #m-operations-menu { display:grid; grid-template-columns:1fr 1fr }

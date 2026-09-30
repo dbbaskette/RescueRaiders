@@ -2,7 +2,7 @@ const {readFileSync}=require('node:fs');
 const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1]+'\n'+readFileSync('experience.js','utf8');
+const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1]+'\n'+readFileSync('experience.js','utf8')+'\n'+readFileSync('operations.js','utf8');
 function mobile(){
  const nodes=new Map(),events=new Map(),docEvents=new Map();
  const noop=()=>{},gradient={addColorStop:noop};
@@ -119,4 +119,22 @@ test('mobile campaign and optional replay return to the correct debrief',()=>mob
  emit('m-campaign','click');assert.equal(G.campaign,0);recordReplay(.2);recordReplay(.2);endGame(true,'Test');TOUCH.render();
  assert.equal(node('m-replay').hidden,false);emit('m-replay','click');TOUCH.render();assert.equal(node('m-modal').hidden,true);
  emit('m-replay-close','click');TOUCH.render();assert.equal(node('m-modal').hidden,false);emit('m-primary','click');assert.equal(G.campaign,1);
+`));
+
+test('mobile group controls isolate armor, preserve preferences and resume a checkpoint',()=>mobile()(`
+ emit('m-weather','click');emit('m-night','click');emit('m-campaign','click');assert.equal(G.environment.weather,'gusts');assert.equal(G.environment.night,true);
+ emit('m-units','click');emit('m-group-armor','click');emit('m-hold','click');
+ assert.equal(G.groupOrders.armor.mode,'hold');assert.equal(G.groupOrders.infantry.mode,'advance');
+ emit('m-formation','click');assert.equal(G.formation,false);emit('m-primary','click');
+ endGame(true,'Captured');newGame();TOUCH.render();assert.equal(node('m-resume').disabled,false);emit('m-resume','click');assert.equal(G.campaign,1);
+`));
+test('mobile academy exposes engineering commands and bailout leaves the tray safely',()=>mobile()(`
+ emit('m-academy','click');TOUCH.render();assert.equal(G.tutorial.advanced,true);assert.equal(node('m-units').disabled,false);
+ newGame();G.state='play';G.helis[0].hp=30;emit('m-units','click');TOUCH.render();assert.equal(node('m-bailout').disabled,false);
+ emit('m-bailout','click');assert.equal(G.paused,false);assert.equal(G.helis[0].dead,true);assert.equal(G.paratroopers.filter(u=>u.pilot).length,1);
+`));
+test('mobile replay offers slow motion and follow-camera controls without resuming battle',()=>mobile()(`
+ emit('m-primary','click');G.time=1;recordReplay(.2);G.time=2;recordReplay(.2);endGame(true,'Test');emit('m-replay','click');TOUCH.render();
+ assert.equal(node('m-replay-controls').hidden,false);emit('m-replay-speed','click');assert.equal(G.replay.speed,.35);
+ emit('m-replay-focus','click');assert.equal(G.replay.follow,false);emit('m-replay-close','click');assert.equal(G.state,'win');
 `));

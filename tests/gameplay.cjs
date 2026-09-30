@@ -2,12 +2,14 @@ const {readFileSync}=require('node:fs');
 const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1]+'\n'+readFileSync('experience.js','utf8');
-function game(){
+const source=readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1]+'\n'+readFileSync('experience.js','utf8')+'\n'+readFileSync('operations.js','utf8');
+function game(options={}){
+ let stored=options.stored??null;
+ const localStorage={getItem:()=>{if(options.blocked)throw Error("blocked");return stored;},setItem:(key,value)=>{if(options.blocked)throw Error("quota");stored=value;}};
  const noop=()=>{};
  const gradient={addColorStop:noop};
  const ctx=new Proxy({measureText:t=>({width:t.length*6}),createLinearGradient:()=>gradient,createRadialGradient:()=>gradient},{get:(o,k)=>o[k]||noop});
- const sandbox={document:{getElementById:()=>({getContext:()=>ctx,addEventListener:noop,style:{}})},Image:class{},addEventListener:noop,requestAnimationFrame:noop,performance:{now:()=>0},location:{search:''},setTimeout:noop,window:{},Math,assert};
+ const sandbox={localStorage,readSaved:()=>JSON.parse(stored),document:{getElementById:()=>({getContext:()=>ctx,addEventListener:noop,style:{}})},Image:class{},addEventListener:noop,requestAnimationFrame:noop,performance:{now:()=>0},location:{search:''},setTimeout:noop,window:{},Math,assert};
  vm.createContext(sandbox);vm.runInContext(source+'\nAUDIO_MUTED=true;',sandbox);
  return code=>vm.runInContext(code,sandbox);
 }
@@ -337,10 +339,10 @@ test('landing cues distinguish speed, nearby enemies, service and boarding capac
  G.units=[];p.cargo=4;assert.equal(landingCue(p).label,'Cargo full');
 `));
 test('hard landing applies graded damage once and gentle touchdown remains safe',()=>game()(`
- G.state='play';const p=G.helis[0];p.x=1000;p.y=GROUND-20;p.vy=200;update(.033);
+ G.state='play';const p=G.helis[0];p.x=1000;p.y=GROUND-27;p.vy=200;update(.033);
  const hp=p.hp;assert.ok(hp<100&&hp>40);assert.equal(G.stats.hardLandings,1);
  for(let i=0;i<20;i++)update(.033);assert.equal(p.hp,hp);assert.equal(G.stats.hardLandings,1);
- p.hp=100;p.y=GROUND-18;p.vy=40;update(.1);assert.equal(p.hp,100);
+ p.hp=100;p.y=GROUND-25;p.vy=40;update(.1);assert.equal(p.hp,100);
 `));
 test('camera look ahead eases through reversals and stays in world bounds',()=>game()(`
  const p=G.helis[0];p.x=3000;p.vx=180;for(let i=0;i<30;i++)updateCamera(p,.1);
@@ -377,4 +379,80 @@ test('cosmetic remnants and impact particles remain bounded and distinct',()=>ga
  impactEffect(1000,GROUND,'ground');assert.ok(G.parts.every(p=>!p.add));
  for(let i=0;i<40;i++)killUnit(spawnUnit(-1,'INF'));assert.equal(G.casualties.length,30);
  updateAtmosphere(10);assert.equal(G.casualties.length,0);
+`));
+
+test('campaign checkpoints advance, survive a reload, and ignore quick battle and academy',()=>{
+ const run=game();run(`startCampaign(0);endGame(true,'Captured');assert.equal(readSaved().checkpoint,1);startAcademy();assert.equal(readSaved().checkpoint,1);newGame();G.state='play';endGame(true,'Quick');assert.equal(readSaved().checkpoint,1);`);
+ game({stored:JSON.stringify({version:1,checkpoint:1,preferences:{difficulty:'veteran',shake:0,muted:true,weather:'rain',night:true}})})(`resumeCampaign();assert.equal(G.campaign,1);assert.equal(G.difficulty,'veteran');assert.equal(G.environment.weather,'rain');assert.equal(SETTINGS.shake,0);assert.equal(AUDIO_MUTED,true);`);
+});
+test('corrupt, unsupported and unavailable storage cannot block a mission',()=>{
+ for(const stored of ['broken','null',JSON.stringify({version:99,checkpoint:2}),JSON.stringify({version:1,checkpoint:999,preferences:{difficulty:'bad',shake:-8,weather:'hurricane'}})])game({stored})(`assert.equal(PROGRESS.checkpoint,null);startCampaign();assert.equal(G.state,'play');`);
+ game({blocked:true})(`startCampaign(1);assert.equal(G.campaign,1);assert.equal(PROGRESS.sessionOnly,true);cycleShake();toggleNight();newGame();assert.equal(SETTINGS.shake,.35);`);
+});
+test('preferences save from the actual controls and training does not change difficulty',()=>game()(`
+ setDifficulty('recruit');cycleShake();cycleWeather();toggleNight();toggleAudio();
+ const saved=readSaved();assert.equal(saved.preferences.difficulty,'recruit');assert.equal(saved.preferences.shake,.35);assert.equal(saved.preferences.weather,'gusts');assert.equal(saved.preferences.night,true);assert.equal(saved.preferences.muted,false);
+ startAcademy();assert.equal(SETTINGS.difficulty,'recruit');assert.equal(G.environment.night,false);
+`));
+test('return guidance switches to the nearest friendly pad and budgets a fuel margin',()=>game()(`
+ const p=G.helis[0];p.x=2800;const b=G.bunkers[0];b.owner=1;let nav=returnGuidance();assert.equal(nav.x,forwardPadX(b));assert.ok(nav.fuel>0&&!nav.warning);
+ p.fuel=nav.fuel+7;assert.equal(returnGuidance().warning,true);b.owner=-1;assert.equal(returnGuidance().kind,'hq');
+`));
+test('group orders isolate armor and new units inherit their group command',()=>game()(`
+ G.state='play';G.formation=false;const infantry=spawnUnit(1,'INF'),tank=spawnUnit(1,'TANK');selectGroup('armor');setOrder('hold');
+ assert.equal(commandMovement(tank).move,false);assert.equal(commandMovement(infantry).move,true);
+ const second=spawnUnit(1,'TANK');assert.equal(commandMovement(second).move,false);
+ G.helis[0].x=100;setOrder('rally');assert.equal(commandMovement(tank).dir,-1);
+ selectGroup('all');setOrder('advance');assert.equal(commandMovement(second).move,true);assert.equal(G.orders.mode,'advance');
+`));
+test('convoys establish tank, infantry, AA and van order without blocking the lead tank',()=>game()(`
+ G.state='play';G.bunkers=[];G.turrets=[];G.helis[1].dead=true;
+ const inf=spawnUnit(1,'INF'),aa=spawnUnit(1,'AA'),van=spawnUnit(1,'VAN'),tank=spawnUnit(1,'TANK');
+ Object.assign(tank,{x:250});Object.assign(inf,{x:280});Object.assign(aa,{x:310});Object.assign(van,{x:360});
+ for(let i=0;i<1800;i++)updateUnits(1/60);
+ assert.ok(tank.x>inf.x&&inf.x>aa.x&&aa.x>van.x);assert.ok(van.x>360);assert.ok(tank.x-van.x>=190);
+ G.units=[van];assert.equal(commandMovement(van).move,false);const escort=spawnUnit(1,'INF');escort.x=van.x+260;assert.equal(commandMovement(van).move,true);
+`));
+test('enemy waves assemble then release, and engineers can reclaim a turret behind them',()=>game()(`
+ for(const type of ['INF','INF','INF','AA','TANK'])spawnUnit(-1,type);
+ assert.equal(commandMovement(G.units[0]).move,false);updateOperations(.1);assert.ok(G.units.every(u=>u.aiReleased));assert.ok(G.radio.text.includes('advancing'));
+ const eng=spawnUnit(-1,'ENG');eng.x=4000;G.turrets=[{x:4300,side:1,hp:70,maxhp:100}];assert.equal(commandMovement(eng).dir,1);
+ const lone=spawnUnit(-1,'TANK');updateOperations(46);assert.equal(lone.aiReleased,true);
+`));
+test('wind drives aircraft and bomb drift while prediction matches stepped impact',()=>game()(`
+ G.environment.weather='rain';G.time=0;const h=G.helis[0];h.vx=0;applyWind(h,1);assert.ok(h.vx<0);
+ const bomb=bombFromHeli(h),prediction=bombPosition(bomb,bombGroundTime(bomb));assert.ok(bomb.wind<0);
+ for(let i=0;i<500;i++)if(stepBomb(bomb,1/60))break;
+ assert.ok(Math.abs(bomb.x-prediction.x)<.0001);assert.ok(Math.abs(bomb.y-prediction.y)<.0001);
+ h.y=GROUND-22;h.vx=0;applyWind(h,1);assert.equal(h.vx,0);
+`));
+test('bailout conserves passengers and recovers a unique pilot for one reward',()=>game()(`
+ G.state='play';const p=G.helis[0];Object.assign(p,{x:3000,y:300,hp:30,cargo:2,cargoUnits:[{type:'ENG',hp:17},{type:'INF',hp:20,rescue:true}]});
+ assert.equal(bailout(),true);assert.equal(G.lives,2);assert.equal(p.cargo,0);assert.equal(G.paratroopers.length,3);assert.equal(bailout(),false);
+ const pilot=G.paratroopers.find(u=>u.pilot);assert.ok(pilot);assert.equal(G.paratroopers.filter(u=>u.rescue).length,1);
+ p.dead=false;p.cargo=0;p.cargoUnits=[];G.paratroopers=G.paratroopers.filter(u=>u!==pilot);delete pilot.y;G.units.push(pilot);assert.equal(commandMovement(pilot).move,false);
+ boardTroop(p,pilot);assert.equal(p.cargoUnits[0].pilot,true);p.service='hq';const funds=G.funds;updateOperations(.1);
+ assert.equal(G.stats.pilotsRescued,1);assert.equal(G.funds,funds+150);assert.equal(p.cargo,0);updateOperations(.1);assert.equal(G.funds,funds+150);
+`));
+test('bailout needs spare aircraft, altitude and critical damage',()=>game()(`
+ G.state='play';const p=G.helis[0];p.hp=60;assert.equal(canBailout(),false);p.hp=30;p.y=GROUND-50;assert.equal(canBailout(),false);p.y=300;G.lives=1;assert.equal(canBailout(),false);
+`));
+test('advanced academy progresses through real transport, engineering and group orders',()=>game()(`
+ startAcademy();const p=G.helis[0];autoBoardTroops(p,1);updateTutorial();assert.equal(G.tutorial.step,1);
+ p.x=1050;p.y=400;selectCargo(cargoManifest(p).findIndex(c=>c.type==='ENG'));troopTransfer(p,true);updateTutorial();assert.equal(G.tutorial.step,2);
+ const engineer=G.paratroopers[0];for(let i=0;i<800&&G.paratroopers.length;i++)updateEmplacements(1/60);engineer.x=1080;
+ for(let i=0;i<500;i++){updateUnits(1/60);updateTutorial();}
+ assert.equal(G.tutorial.step,4);selectGroup('armor');setOrder('hold');setOrder('rally');updateTutorial();assert.equal(G.state,'win');assert.equal(PROGRESS.checkpoint,null);
+`));
+test('replay interpolation follows entity identity across removals and never edits snapshots',()=>game()(`
+ G.state='play';const a=spawnUnit(1,'TANK'),b=spawnUnit(1,'AA');a.x=1000;b.x=1500;G.time=1;recordReplay(.2);
+ a.x=1200;b.x=1700;G.time=2;recordReplay(.2);let f=interpolatedReplay(.5);assert.equal(f.units[0].x,1100);assert.equal(f.units[1].x,1600);
+ G.units.splice(0,1);b.x=1900;G.time=3;recordReplay(.2);f=interpolatedReplay(1.5);assert.equal(f.units[0].x,1200);assert.equal(f.units[1].x,1800);
+ endGame(true,'Test');startReplay();toggleReplaySpeed();assert.equal(G.replay.speed,.35);const saved=JSON.stringify(G.replayFrames);renderReplay();assert.equal(JSON.stringify(G.replayFrames),saved);assert.equal(G.units[0].x,1900);toggleReplayFocus();assert.equal(G.replay.follow,false);
+`));
+test('helicopter collision respects fuselage pitch and a visible cable crossing',()=>game()(`
+ const h=G.helis[0];Object.assign(h,{x:1000,y:400,dir:1,pitch:0});
+ assert.equal(heliBodyHit(h,1035,403),true);assert.equal(heliBodyHit(h,1060,403),false);assert.equal(heliBodyHit(h,1008,430),false);
+ assert.equal(heliCableHit(h,{x:1030}),true);assert.equal(heliCableHit(h,{x:1050}),false);
+ h.pitch=.2;assert.equal(heliBodyHit(h,1035,410),true);
 `));

@@ -16,7 +16,7 @@
       <div class="radar-stack"><button class="radar-button" id="m-radar" aria-label="Radar: tap to scan a sector"><canvas id="touch-radar" width="340" height="74"></canvas></button>
         <div class="notice" id="m-notice" hidden></div>
       </div>
-      <div class="top-actions"><button id="m-units">UNITS</button><button id="m-audio" aria-label="Mute sound">SOUND</button><button id="m-pause" aria-label="Pause game">Ⅱ</button></div>
+      <div class="top-actions"><button id="m-units">COMMAND</button><button id="m-audio" aria-label="Mute sound">SOUND</button><button id="m-pause" aria-label="Pause game">Ⅱ</button></div>
     </div>
     <div id="m-training" hidden></div>
     <div class="flight-controls" id="m-controls">
@@ -35,10 +35,16 @@
         <p class="description" id="m-description"></p>
         <div class="difficulty-options" id="m-options" role="group" aria-label="Difficulty"></div>
         <div class="units" id="m-unit-list" hidden></div>
+        <div id="m-command" hidden>
+          <div class="command-row" role="group" aria-label="Ground force orders"><button id="m-advance">Advance</button><button id="m-hold">Hold</button><button id="m-rally">Rally at helicopter</button></div>
+          <div class="cargo-row" id="m-cargo-seats" role="group" aria-label="Select passenger"></div>
+          <div class="command-row"><button id="m-drop-selected">Deploy selected</button><button id="m-shake">Camera shake</button></div>
+        </div>
         <p class="tray-status" id="m-tray-status" role="status" hidden></p>
-        <div class="panel-actions"><button class="primary" id="m-primary"></button><button id="m-restart" hidden>Restart mission</button><button id="m-tutorial">Training sortie</button></div>
+        <div class="panel-actions"><button class="primary" id="m-primary"></button><button id="m-restart" hidden>Restart mission</button><button id="m-tutorial">Training sortie</button><button id="m-campaign">Campaign · 3 missions</button><button id="m-replay">Watch final moments</button></div>
       </div>
     </section>
+    <button id="m-replay-close" hidden>Back to debrief</button>
     <section class="modal rotate" id="m-rotate" role="dialog" aria-modal="true" aria-label="Rotate your phone" hidden>
       <div class="panel"><p class="eyebrow">LANDSCAPE FLIGHT DECK</p><h1>Rotate to fly</h1><p class="description">Turn your phone sideways for two-thumb controls and a wider view. Your mission stays paused.</p></div>
     </section>`;
@@ -105,8 +111,16 @@
     if(portrait||!ASSETS_OK)return;unlock();reset();
     if(tray){tray=false;G.paused=trayWasPaused;}
     else if(G.state==='play')G.paused=false;
-    else{newGame();G.state='play';}
+    else nextSortie();
   });
+  el('m-campaign').addEventListener('click',()=>{if(portrait)return;unlock();reset();tray=false;startCampaign();});
+  el('m-replay').addEventListener('click',()=>{if(portrait)return;reset();startReplay();});
+  el('m-replay-close').addEventListener('click',stopReplay);
+  for(const mode of ['advance','hold','rally'])el('m-'+mode).addEventListener('click',()=>{if(tray)setOrder(mode);});
+  el('m-shake').addEventListener('click',cycleShake);
+  el('m-drop-selected').addEventListener('click',()=>{const p=G.helis[0];if(tray&&!p.dead&&p.cargo){troopTransfer(p,true);el('m-tray-status').textContent='Passenger deployed. Resume flight when ready.';}});
+  const cargoButtons=[];
+  for(let i=0;i<4;i++){const button=document.createElement('button');button.addEventListener('click',()=>selectCargo(i));el('m-cargo-seats').append(button);cargoButtons.push(button);}
   el('m-restart').addEventListener('click',()=>{if(portrait)return;unlock();tray=false;restartMission();});
   el('m-tutorial').addEventListener('click',()=>{if(portrait||!ASSETS_OK)return;unlock();tray=false;startTutorial();});
   const difficultyButtons=[];
@@ -161,11 +175,21 @@
   }
   function text(id,value){const node=el(id);if(node.textContent!==value)node.textContent=value;}
   TOUCH.render=()=>{
+    el('m-replay-close').hidden=!G.replay||portrait;
+    if(G.replay){el('m-modal').hidden=true;el('m-controls').hidden=true;root.querySelector('.topbar').inert=true;el('m-training').hidden=true;return;}
     const p=G.helis[0],menu=G.state!=='play'||G.paused||tray||!ASSETS_OK;
     if(menu||p.dead||portrait){if(TOUCH.fire||TOUCH.x||TOUCH.y||G.bombAiming||owners.size)reset();}
     root.querySelector('.topbar').inert=menu||portrait;
     el('m-controls').hidden=menu||p.dead||portrait;
     el('m-modal').hidden=!menu||portrait;
+    el('m-command').hidden=!tray;
+    el('m-campaign').hidden=G.state!=='menu'||tray;
+    el('m-replay').hidden=!['win','over'].includes(G.state)||G.replayFrames.length<2;
+    text('m-shake','Shake: '+shakeLabel());
+    for(const mode of ['advance','hold','rally']){el('m-'+mode).classList.toggle('selected',G.orders.mode===mode);el('m-'+mode).setAttribute('aria-pressed',String(G.orders.mode===mode));}
+    const manifest=cargoManifest(p);
+    cargoButtons.forEach((button,i)=>{const c=manifest[i];button.disabled=!c;button.textContent=c?`${c.type} ${Math.ceil(c.hp/UT[c.type].hp*100)}%`:'Empty';button.classList.toggle('selected',!!c&&i===G.selectedCargo);button.setAttribute('aria-pressed',String(!!c&&i===G.selectedCargo));});
+    el('m-drop-selected').disabled=!p.cargo||p.dead;
     el('m-unit-list').hidden=!tray;el('m-tray-status').hidden=!tray;
     el('m-restart').hidden=tray||G.state!=='play';
     el('m-primary').disabled=!ASSETS_OK;el('m-units').disabled=!!G.tutorial;
@@ -173,15 +197,17 @@
     for(const {button,id} of difficultyButtons){button.classList.toggle('selected',SETTINGS.difficulty===id);button.setAttribute('aria-pressed',String(SETTINGS.difficulty===id));}
     el('m-training').hidden=!G.tutorial||menu||portrait;text('m-training',tutorialHint());
     if(menu){
-      text('m-title',!ASSETS_OK?'Loading aircraft…':tray?'Reinforcements':G.state==='menu'?'RESCUE RAIDERS':G.state==='win'?'Mission accomplished':G.state==='over'?'Mission failed':'Flight paused');
-      text('m-description',tray?`$${G.funds} available · Escort your Demo Van to enemy HQ.`:G.state==='menu'?'Left thumb: steer. Right thumb: hold FIRE, hold and release BOMB. Capture bunkers and escort your Demo Van to enemy HQ.':G.state==='play'?'Your helicopter is safe while paused. Resume when you are ready.':`${G.endMsg} · Score ${G.score}`);
-      text('m-primary',tray?'Back to flight':G.state==='play'?'Resume flight':'Start mission');
+      text('m-title',!ASSETS_OK?'Loading aircraft…':tray?'Field command':G.state==='menu'?'RESCUE RAIDERS':G.state==='win'?'Mission accomplished':G.state==='over'?'Mission failed':'Flight paused');
+      text('m-description',tray?`$${G.funds} · ${missionText()}`:G.state==='menu'?'Left thumb: steer. Right thumb: hold FIRE, hold and release BOMB. Capture bunkers and escort your Demo Van to enemy HQ.':G.state==='play'?'Your helicopter is safe while paused. Resume when you are ready.':`${G.endMsg} · Score ${G.score} · ${debriefDetails()}`);
+      text('m-primary',tray?'Back to flight':G.state==='play'?'Resume flight':G.state==='menu'?'Quick battle':sortieLabel());
     }
     for(const {button,type} of unitButtons){const active=type==='VAN'&&G.units.some(u=>u.side===1&&u.type==='VAN');button.disabled=active||G.funds<UT[type].cost;button.querySelector('small').textContent=active?'Active':`$${UT[type].cost}`;}
     for(const [name,value] of [['hull',Math.max(0,p.hp/p.maxhp*100)],['fuel',p.fuel]]){
       el(`m-${name}`).style.width=`${value}%`;el(`m-${name}`).style.background=value<(name==='fuel'?20:25)?'#ffb16f':'#8edfb1';text(`m-${name}-value`,name==='fuel'&&p.fuel<=0?`R ${Math.ceil(p.reserve)}s`:`${Math.ceil(value)}%`);
       el(`m-${name}`).classList.toggle('servicing',p.rearming);
     }
+    el('m-training').hidden=(!G.tutorial&&G.campaign===null)||menu||portrait;
+    text('m-training',G.tutorial?tutorialHint():missionText());
     text('m-funds',`$${G.funds}`);text('m-lives',`${G.lives} lives · ${G.score} pts`);
     text('m-audio',AUDIO_MUTED?'MUTED':'SOUND');el('m-audio').setAttribute('aria-label',AUDIO_MUTED?'Unmute sound':'Mute sound');
     el('touch-bomb').querySelector('small').textContent=G.bombAiming?`${bombGroundTime(bombFromHeli(p)).toFixed(1)}s ETA`:`${Math.floor(p.bombs)} · hold`;

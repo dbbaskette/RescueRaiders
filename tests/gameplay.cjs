@@ -456,3 +456,35 @@ test('helicopter collision respects fuselage pitch and a visible cable crossing'
  assert.equal(heliCableHit(h,{x:1030}),true);assert.equal(heliCableHit(h,{x:1050}),false);
  h.pitch=.2;assert.equal(heliBodyHit(h,1035,410),true);
 `));
+// Convoys are marched from spawn by stepping the simulation; teleporting a Van hides finish-line bugs.
+const MARCH=`
+ function march(side,escorts,seconds=420){
+  G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;G.helis[0].dead=true;G.helis[0].respawn=1e9;
+  for(const b of G.bunkers)Object.assign(b,{owner:0,side:0,hp:0,garrison:0,balloonDead:true,cableBroken:true,balloonRespawn:1e9});
+  for(const type of escorts)spawnUnit(side,type).aiReleased=true;
+  // The Van is bought after its escorts have left, so it starts behind them as it does in play.
+  for(let i=0;i<seconds*30&&G.state==='play';i++){if(i===600)spawnUnit(side,'VAN').aiReleased=true;update(1/30);}
+ }`;
+test('an escorted player Van crosses the enemy HQ line with convoy escorts on',()=>game()(MARCH+`
+ march(1,['TANK','AA','INF','INF','INF']);assert.equal(G.state,'win');assert.ok(G.endMsg.includes('DEMO VAN'));
+`));
+test('an escorted enemy Van crosses the player HQ line with convoy escorts on',()=>game()(MARCH+`
+ march(-1,['TANK','AA','INF','INF','INF']);assert.equal(G.state,'over');assert.ok(G.endMsg.includes('DEMO VAN'));
+`));
+test('the enemy column ignores the player escort setting and still finishes',()=>game()(MARCH+`
+ G.formation=false;march(-1,['TANK','AA','INF','INF','INF']);assert.equal(G.state,'over');assert.ok(G.endMsg.includes('DEMO VAN'));
+`));
+test('a player Van with escorts off still finishes',()=>game()(MARCH+`
+ G.formation=false;march(1,['TANK']);assert.equal(G.state,'win');
+`));
+test('the Van breaks formation for its final run only near the opposing HQ, and Hold still stops it',()=>game()(`
+ G.state='play';const tank=spawnUnit(1,'TANK'),van=spawnUnit(1,'VAN');
+ Object.assign(tank,{x:4100});Object.assign(van,{x:4000});assert.equal(commandMovement(van).move,false);
+ const line=ENEMY_X-70;Object.assign(tank,{x:line-500});Object.assign(van,{x:line-600});assert.equal(commandMovement(van).move,true);
+ assert.equal(canPass(van,tank),true);selectGroup('support');setOrder('hold');assert.equal(commandMovement(van).move,false);
+`));
+test('an AA truck keeps advancing while a helicopter loiters outside its firing range',()=>game()(`
+ G.state='play';G.bunkers=[];G.turrets=[];const aa=spawnUnit(-1,'AA');aa.aiReleased=true;aa.x=5000;
+ Object.assign(G.helis[0],{x:4000,y:GROUND-100});for(let i=0;i<60;i++)updateUnits(1/60);
+ assert.ok(aa.x<4990);assert.equal(G.missiles.length,0);
+`));

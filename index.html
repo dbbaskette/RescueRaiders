@@ -1094,13 +1094,13 @@ function updateUnits(dt){
     const et=nearestAirTarget(u.x,GROUND-UT[u.type].h,u.side,st.rng+200);
     let moved=false;
     if(u.type==='AA'){
-      if(et&&et.side!==u.side){
-        if(Math.abs(et.x-u.x)<st.rng&&u.cd<=0){
-          u.cd=st.cd;u.fireFlash=.12;
-          G.missiles.push(mkMissile(u.x,GROUND-20,et,u.side));
-          SFX.missile(u.x);
-        }
-      }else moved=true;
+      // AA trucks fire on the move, so an aircraft loitering nearby cannot stall the column behind them.
+      if(et&&Math.abs(et.x-u.x)<st.rng&&u.cd<=0){
+        u.cd=st.cd;u.fireFlash=.12;
+        G.missiles.push(mkMissile(u.x,GROUND-20,et,u.side));
+        SFX.missile(u.x);
+      }
+      moved=true;
     }else if(u.type==='VAN'){
       moved=true;
     }else{

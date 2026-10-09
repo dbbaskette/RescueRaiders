@@ -49,11 +49,13 @@ Desktop: select a group with **Tab** or the four group buttons, then **Z Advance
 - **Rally:** move toward the helicopter's location at the moment of the order, then stop nearby. It does not continuously chase the aircraft.
 - **All:** apply the order to every group. New reinforcements inherit their group's current order. Stranded rescue troops and downed pilots wait for recovery.
 
-With **Convoy escorts** enabled, tanks overtake and lead infantry, AA and the Van. Infantry stays approximately 65 world units behind the foremost tank, AA 125 and the Van 210. Faster followers close gaps without overtaking the lead armor. A Van waits when it has no surviving infantry, tank or AA escort; buy replacement protection or turn escort behavior off. Engineers remain free to reach their work sites. Explicit Hold and Rally orders take precedence over formation movement.
+With **Convoy escorts** enabled, tanks overtake and lead infantry, AA and the Van. Infantry stays approximately 65 world units behind the foremost tank, AA 125 and the Van 210. Faster followers close gaps without overtaking the lead armor. A Van waits when it has no surviving infantry, tank or AA escort; buy replacement protection or turn escort behavior off. Engineers remain free to reach their work sites. AA trucks fire on the move, so they keep their place in the column while engaging aircraft. Explicit Hold and Rally orders take precedence over formation movement.
 
-Switch convoy escorts on/off in pause on desktop, or Command on mobile. This is a sortie setting. Troops moving in the same direction can pass units assigned a rear formation position; this represents separate lanes within the side-on battlefield.
+**Final run:** escorts stop to fight short of the opposing HQ, so within 680 world units of it the Van leaves formation, passes its escorts and drives for the line at full speed. It is unprotected for those seconds: clear the approach first, or **Hold** the Support group and release it with **Advance** when the way is open. The enemy Van makes the same run at your HQ.
 
-The enemy assembles combined-arms waves, releasing a column when it has a tank, AA and three infantry or after 45 seconds of waiting. Engineers can turn back to reclaim nearby turrets. Vans require two armor/AA escorts before purchase and obey escort spacing. Brief radio captions announce column movements.
+Switch convoy escorts on/off in pause on desktop, or Command on mobile. This is a sortie setting for your column only; the enemy always keeps formation. Troops moving in the same direction can pass units assigned a rear formation position; this represents separate lanes within the side-on battlefield.
+
+The enemy assembles combined-arms waves, releasing a column when it has a tank, AA and three infantry or after 45 seconds of waiting. Engineers can turn back to reclaim nearby turrets. Vans require two armor/AA escorts before purchase, obey escort spacing and make the same final run. Brief radio captions announce column movements.
 
 ## Bunkers, turrets and service
 

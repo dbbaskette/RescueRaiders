@@ -63,9 +63,14 @@ function activeOrder(){
 }
 function orderFor(u){return G.groupOrders[unitGroup(u)]||G.orders;}
 function formationRank(u){return {TANK:4,INF:3,ENG:3,AA:2,VAN:1}[u.type];}
-function canPass(u,o){return G.formation&&u.side===o.side&&formationRank(u)>formationRank(o)&&!(u.side===1&&orderFor(u).mode!=='advance');}
+// Escorts stop to fight short of the opposing HQ, so a Van inside its final run leaves formation and may pass them.
+const VAN_DASH=680;
+function vanDash(u){return u.type==='VAN'&&(u.side>0?ENEMY_X-70-u.x:u.x-(PLAYER_X+70))<VAN_DASH;}
+// The escort setting is the player's; the enemy column always keeps formation.
+function formationOn(side){return side!==1||G.formation;}
+function canPass(u,o){return u.side===o.side&&(vanDash(u)||formationOn(u.side)&&formationRank(u)>formationRank(o)&&!(u.side===1&&orderFor(u).mode!=='advance'));}
 function convoyMovement(u){
-  if(!G.formation||u.type==='TANK'||u.type==='ENG')return {move:true,dir:u.side};
+  if(vanDash(u)||!formationOn(u.side)||u.type==='TANK'||u.type==='ENG')return {move:true,dir:u.side};
   const allies=G.units.filter(o=>o!==u&&o.side===u.side&&!o.rescue&&!o.pilot&&o.type!=='ENG'&&(u.side===1||o.aiReleased));
   const tanks=allies.filter(o=>o.type==='TANK');
   const escorts=tanks.length?tanks:allies.filter(o=>o.type==='INF'||o.type==='AA');

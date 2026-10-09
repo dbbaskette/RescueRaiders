@@ -10,7 +10,7 @@ function game(options={}){
  const gradient={addColorStop:noop};
  const ctx=new Proxy({measureText:t=>({width:t.length*6}),createLinearGradient:()=>gradient,createRadialGradient:()=>gradient},{get:(o,k)=>o[k]||noop});
  const sandbox={localStorage,readSaved:()=>JSON.parse(stored),document:{getElementById:()=>({getContext:()=>ctx,addEventListener:noop,style:{}})},Image:class{},addEventListener:noop,requestAnimationFrame:noop,performance:{now:()=>0},location:{search:''},setTimeout:noop,window:{},Math,assert};
- vm.createContext(sandbox);vm.runInContext(source+'\nAUDIO_MUTED=true;',sandbox);
+ vm.createContext(sandbox);vm.runInContext(source+'\nAUDIO_MUTED=true;ac=()=>({state:"running"});',sandbox);
  return code=>vm.runInContext(code,sandbox);
 }
 test('ground missile acquisition and impact use ground altitude',()=>game()(`
@@ -537,3 +537,68 @@ test('sustained slow frames lower render quality and fast frames do not raise it
  const level=QUALITY.level;for(let i=0;i<900;i++)governQuality(.016);assert.equal(QUALITY.level,level);
  newGame();assert.equal(QUALITY.level,0);
 `));
+test('an incoming missile is reported and sounded until a flare decoys it',()=>game()(`
+ G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;const p=G.helis[0];assert.equal(incomingMissile(),null);
+ const m=mkMissile(p.x+700,p.y,p,-1);G.missiles.push(m);assert.equal(incomingMissile(),m);
+ let tones=0;SFX.lock=()=>tones++;update(.2);assert.ok(tones>=1);
+ m.target={x:p.x+50,y:p.y,life:1};assert.equal(incomingMissile(),null);G.missiles=[mkMissile(p.x+700,p.y,p,1)];assert.equal(incomingMissile(),null);
+`));
+test('desktop HUD panels sit below the ground lane',()=>game()(`
+ for(const panel of Object.values(HUD_BOTTOM))assert.ok(panel.y>=GROUND+12,'panel top '+panel.y);
+`));
+test('every main menu control sits inside the menu panel and an unavailable action is disabled',()=>game()(`
+ render();assert.ok(G.buttons.length>=10);
+ for(const b of G.buttons)assert.ok(b.x>=MENU_PANEL.x&&b.y>=MENU_PANEL.y&&b.x+b.w<=MENU_PANEL.x+MENU_PANEL.w&&b.y+b.h<=MENU_PANEL.y+MENU_PANEL.h,b.id+' is outside the panel');
+ const resume=G.buttons.find(b=>b.id==='resume');assert.equal(resume.disabled,true);
+ handleCanvasClick(resume.x+5,resume.y+5);assert.equal(G.state,'menu');
+`));
+test('Esc cancels a bomb preview first, otherwise pauses and resumes',()=>game()(`
+ G.state='play';onKey('Escape');assert.equal(G.paused,true);onKey('Escape');assert.equal(G.paused,false);
+ onKey('KeyB');assert.equal(G.bombAiming,true);onKey('Escape');assert.equal(G.bombAiming,false);assert.equal(G.paused,false);
+`));
+test('the pause screen can return to the main menu and open the controls reference',()=>game()(`
+ G.state='play';G.paused=true;render();const ids=G.buttons.map(b=>b.id);
+ for(const id of ['pause_resume','pause_restart','pause_menu','pause_controls','pause_audio','shake','formation'])assert.ok(ids.includes(id),id);
+ for(const a of G.buttons)for(const b of G.buttons)if(a!==b)assert.ok(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.h<=b.y||b.y+b.h<=a.y,a.id+' overlaps '+b.id);
+ G.buttons.find(b=>b.id==='pause_controls').onClick();render();assert.ok(G.buttons.some(b=>b.id==='controls_close'));onKey('Escape');render();assert.ok(G.buttons.some(b=>b.id==='pause_resume'));
+ G.buttons.find(b=>b.id==='pause_menu').onClick();assert.equal(G.state,'menu');assert.equal(G.paused,false);
+`));
+test('a gamepad flies, fires, bombs and pauses, and hands control back to the keyboard',()=>game()(`
+ G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;const p=G.helis[0];
+ const pad={connected:true,axes:[1,-1,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0}))};
+ const x=p.x,y=p.y;for(let i=0;i<30;i++){pollGamepad([pad]);update(1/60);}assert.ok(p.x>x+10&&p.y<y-10);assert.equal(PAD.active,true);
+ pad.axes=[0,0,0,0];pad.buttons[0].pressed=true;pollGamepad([pad]);update(1/60);assert.ok(G.bullets.length>0);pad.buttons[0].pressed=false;
+ pad.buttons[2].pressed=true;pollGamepad([pad]);assert.equal(G.bombAiming,true);pad.buttons[2].pressed=false;pollGamepad([pad]);assert.equal(G.bombs.length,1);
+ pad.buttons[9].pressed=true;pollGamepad([pad]);assert.equal(G.paused,true);pollGamepad([pad]);assert.equal(G.paused,true);
+ pad.buttons[9].pressed=false;pollGamepad([pad]);pad.buttons[9].pressed=true;pollGamepad([pad]);assert.equal(G.paused,false);
+ pollGamepad([]);assert.equal(PAD.x,0);assert.equal(PAD.fire,false);
+`));
+test('combat school teaches buying, refuelling, flaring a missile and passing a cable',()=>game()(`
+ startCombatSchool();const p=G.helis[0];assert.equal(G.tutorial.step,0);assert.ok(academyHint().startsWith('1/4'));
+ buy(1,'INF');updateTutorial();assert.equal(G.tutorial.step,1);assert.ok(p.fuel<LOW_FUEL);assert.ok(returnGuidance());
+ Object.assign(p,{x:PLAYER_X,y:GROUND-22,vx:0,vy:0});for(let i=0;i<900&&G.tutorial.step===1;i++)update(1/60);assert.equal(G.tutorial.step,2);
+ Object.assign(p,{x:420,y:260,vx:0,vy:0});for(let i=0;i<400&&!incomingMissile();i++){p.y=260;update(1/60);}assert.ok(incomingMissile());
+ onKey('KeyC');for(let i=0;i<300&&G.tutorial.step===2;i++){p.y=260;update(1/60);}assert.equal(G.tutorial.step,3);
+ const cable=G.bunkers[0];assert.equal(cable.owner,-1);assert.equal(cable.balloonDead,false);
+ Object.assign(p,{x:cable.x+220,y:150});updateTutorial();assert.equal(G.state,'win');
+`));
+test('lessons chain into the campaign and the menu points first-time and returning players differently',()=>{
+ game()(`
+  assert.equal(primarySortie().id,'training');startTutorial();endGame(true,'done');assert.ok(sortieLabel().includes('Flight academy'));
+  nextSortie();assert.equal(G.tutorial.advanced,true);assert.ok(!G.tutorial.combat);endGame(true,'done');
+  nextSortie();assert.equal(G.tutorial.combat,true);endGame(true,'done');assert.equal(readSaved().lessons,3);
+  nextSortie();assert.equal(G.campaign,0);assert.equal(readSaved().lastMode,'campaign');
+  newGame();assert.equal(primarySortie().id,'campaign');startQuickBattle();assert.equal(readSaved().lastMode,'quick');newGame();assert.equal(primarySortie().id,'quick');
+  onKey('Enter');assert.equal(G.state,'play');assert.equal(G.campaign,null);assert.equal(G.tutorial,null);
+ `);
+ game({stored:JSON.stringify({version:1,checkpoint:1,lastMode:'campaign',lessons:3})})(`
+  const next=primarySortie();assert.equal(next.id,'campaign');assert.ok(next.label.includes('2'));next.start();assert.equal(G.campaign,1);
+ `);
+ game({stored:JSON.stringify({version:1,checkpoint:null,lastMode:'hacked',lessons:99})})(`assert.equal(PROGRESS.lastMode,null);assert.equal(PROGRESS.lessons,3);`);
+});
+test('the page is installable: manifest, icons and metadata are linked',()=>{
+ const {existsSync}=require('node:fs');const html=readFileSync('index.html','utf8'),manifest=JSON.parse(readFileSync('manifest.webmanifest','utf8'));
+ assert.ok(html.includes('rel="manifest" href="manifest.webmanifest"'));assert.ok(html.includes('rel="icon"'));assert.ok(html.includes('apple-mobile-web-app-capable'));assert.ok(html.includes('name="description"'));
+ assert.equal(manifest.orientation,'landscape');assert.ok(['fullscreen','standalone'].includes(manifest.display));assert.ok(manifest.icons.length>=2);
+ for(const icon of manifest.icons)assert.ok(existsSync(icon.src),icon.src);
+});

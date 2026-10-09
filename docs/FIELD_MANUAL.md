@@ -15,10 +15,35 @@ Your helicopter supports the convoy with guns, bombs, missiles and troop transpo
 - **Hold B / BOMB:** show the trajectory and estimated time to ground; release to drop once. Esc, dragging off the touch button, pausing or losing focus cancels the preview.
 - **M / MISSILE:** launch at the selected aircraft or ground target. Brackets appear while engaging, rather than cluttering ordinary flight.
 - **C / FLARE:** launch decoys that can divert incoming missiles. The helicopter carries four, restocked at HQ. A missile that connects costs about 38 hull on Normal (27 on Recruit, 46 on Veteran), so a fresh aircraft survives two.
-- **P / pause button:** pause. Leaving the page, losing focus or rotating a phone to portrait also pauses. Resume explicitly.
+- **P, Esc / pause button:** pause. Esc first cancels a bomb preview. The pause screen changes sound, camera shake, convoy escorts and fullscreen, restarts the mission or returns to the main menu. Leaving the page, losing focus or rotating a phone to portrait also pauses. Resume explicitly.
+- **H** on the menu or pause screen opens the controls reference for keyboard and gamepad.
 - **Click or tap radar:** inspect a sector for 2.5 seconds; flight input restores camera tracking.
 
-Damage flashes indicate the incoming direction. Critical hull and low fuel have visual and audible cautions. The enemy **HQ breach** timer estimates uninterrupted Van travel; combat, assembly and escorts can delay arrival. Full, reduced and disabled camera shake settings are available and saved.
+When an enemy missile is tracking you, a **MISSILE INBOUND** label and a bearing mark appear beside the helicopter with a repeating lock tone; they clear when a flare decoys the missile. Damage flashes indicate the incoming direction. Critical hull and low fuel have visual and audible cautions. The enemy **HQ breach** timer estimates uninterrupted Van travel; combat, assembly and escorts can delay arrival. Full, reduced and disabled camera shake settings are available and saved.
+
+### Gamepad
+
+A standard-layout gamepad takes control as soon as a button is pressed, and any key hands control back to the keyboard. The left stick flies and, like the touch joystick, hovers when released.
+
+| Button | Action |
+| --- | --- |
+| Left stick | Fly |
+| A or RT | Fire the gun |
+| X | Hold to preview a bomb, release to drop |
+| B / Y | Missile / flares |
+| RB | Board, unload, or parachute one troop aloft |
+| LB / LT | Select passenger / drop the selected passenger |
+| D-pad up / down / left | Advance / Hold / Rally |
+| D-pad right or Back | Next command group |
+| Start | Pause, or confirm on the menu and debrief |
+
+Reinforcements are bought with the keyboard, mouse or touch.
+
+### Display and installation
+
+The view is always 16:9. It renders at the display's pixel density, capped at 2× (1.5× on touch), and the simulation runs in fixed 1/120 s steps, so game speed is the same on 30, 60 and 120 Hz screens. If frames stay slow for several seconds the game lowers its particle budget and render resolution for the rest of that sortie.
+
+**Fullscreen** is on the menu and pause screen where the browser supports it. On a phone, add the page to the home screen to launch it full-screen in landscape. Ground units are drawn slightly larger than their hit boxes with a thin team-colored outline (teal friendly, red enemy) so they read against the terrain; collisions are unchanged.
 
 ## Troop transport
 
@@ -118,7 +143,9 @@ Enemy base income is $18, $22 or $27 every three seconds, before bunkers. Hard-l
 
 As a baseline, an HQ left completely undefended falls to the enemy Van after about 7:00 on Recruit, 5:40 on Normal and 5:35 on Veteran. `node tools/balance.cjs` replays that check, and a ground-only stalemate check, after tuning changes.
 
-**Training** / menu **T** covers flight, bombs, pickup and capture. **Flight Academy** / menu **Y** covers boarding mixed cargo, selecting an engineer for a parachute insertion, capturing and repairing a turret, and holding/rallying armor. Both provide the troops needed, disable enemy deployments and restart if the helicopter is lost. Use the aircraft to recover/reposition an engineer who lands away from the target turret.
+**Training** / menu **T** covers flight, bombs, pickup and capture. **Flight Academy** / menu **Y** covers boarding mixed cargo, selecting an engineer for a parachute insertion, capturing and repairing a turret, and holding/rallying armor. **Combat School** / menu **K** covers buying a unit, refuelling at HQ, decoying a missile with flares and crossing a hostile balloon cable; its training missile is relaunched until one is decoyed, and hull and flares are restored each time. All three disable enemy deployments and restart if the helicopter is lost. Finishing one offers the next, and the last leads into the campaign.
+
+The large menu button (**Enter**) offers the next unfinished lesson on a first visit and, once you have flown a mission, the mode you flew last: Quick Battle, or your campaign checkpoint. Use the aircraft to recover/reposition an engineer who lands away from the target turret.
 
 ## Debrief and replay
 
@@ -126,4 +153,4 @@ The debrief reports rescued troops/pilots, captured bases, convoy losses and the
 
 Playback interpolates between snapshots using stable entity identities. It follows a finishing Van, recent ordnance or the helicopter; **F / camera button** switches to the original view. **Space / speed button** changes between normal speed and 0.35× slow motion. **Esc / Back to debrief** exits. Replay is silent and never resumes, damages or awards points to the live battle. It is a visual recording, not a deterministic re-simulation.
 
-Cosmetic budgets bound particles (180 on touch / 700 on desktop), wrecks, discarded canopies and replay history. Fixed terrain is cached in up to 40 tiles, with grass and rotor wash remaining animated.
+Cosmetic budgets bound particles (320 on touch / 700 on desktop, stepping down to 140 / 280 when frames stay slow), night light pools, wrecks, discarded canopies and replay history. Fixed terrain is cached in up to 40 tiles, with grass and rotor wash remaining animated.

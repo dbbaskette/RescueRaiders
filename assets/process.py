@@ -53,18 +53,53 @@ def key_and_crop(src_file):
         im = im.crop(bbox)
     return im
 
-for name, (src, tw) in SPRITES.items():
-    im = key_and_crop(src)
-    th = max(1, round(im.height * tw / im.width))
-    im = im.resize((tw, th), Image.LANCZOS)
-    if name in WEBP:
-        im.save(f'{name}.webp', quality=90, method=6)
-    else:
-        im.save(f'{name}.png', optimize=True)
-    print(f'{name} {im.size} (alpha bbox: {im.getchannel("A").getbbox()})')
+def sprites():
+    for name, (src, tw) in SPRITES.items():
+        im = key_and_crop(src)
+        th = max(1, round(im.height * tw / im.width))
+        im = im.resize((tw, th), Image.LANCZOS)
+        if name in WEBP:
+            im.save(f'{name}.webp', quality=90, method=6)
+        else:
+            im.save(f'{name}.png', optimize=True)
+        print(f'{name} {im.size} (alpha bbox: {im.getchannel("A").getbbox()})')
 
-# backdrop: downscale + slight darken for mood
-bd = Image.open('src_backdrop.png').convert('RGB')
-bd = bd.resize((2048, round(bd.height * 2048 / bd.width)), Image.LANCZOS)
-bd.save('backdrop.jpg', quality=82)
-print('backdrop.jpg', bd.size)
+    # backdrop: downscale + slight darken for mood
+    bd = Image.open('src_backdrop.png').convert('RGB')
+    bd = bd.resize((2048, round(bd.height * 2048 / bd.width)), Image.LANCZOS)
+    bd.save('backdrop.jpg', quality=82)
+    print('backdrop.jpg', bd.size)
+
+
+def icons():
+    """App icons for the web manifest: the helicopter over the dusk sky used in the game."""
+    heli = Image.open('heli.png').convert('RGBA')
+    sky = [(0.0, (62, 76, 92)), (0.52, (176, 160, 142)), (0.74, (222, 176, 132)), (0.75, (58, 56, 46)), (1.0, (24, 27, 24))]
+
+    def colour(t):
+        for (t0, c0), (t1, c1) in zip(sky, sky[1:]):
+            if t <= t1:
+                k = (t - t0) / (t1 - t0) if t1 > t0 else 0
+                return tuple(round(a + (b - a) * k) for a, b in zip(c0, c1))
+        return sky[-1][1]
+
+    for name, size, width in (('icon-192.png', 192, 0.84), ('icon-512.png', 512, 0.84), ('icon-maskable-512.png', 512, 0.6)):
+        im = Image.new('RGBA', (size, size))
+        px = im.load()
+        for y in range(size):
+            c = colour(y / (size - 1)) + (255,)
+            for x in range(size):
+                px[x, y] = c
+        w = round(size * width)
+        h = round(heli.height * w / heli.width)
+        craft = heli.resize((w, h), Image.LANCZOS)
+        im.alpha_composite(craft, ((size - w) // 2, round(size * 0.44) - h // 2))
+        im.convert('RGB').save(name, optimize=True)
+        print(name, im.size)
+
+
+if __name__ == '__main__':
+    import sys
+    if 'icons' not in sys.argv:
+        sprites()
+    icons()

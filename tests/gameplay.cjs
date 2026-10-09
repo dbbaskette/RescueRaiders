@@ -602,3 +602,12 @@ test('the page is installable: manifest, icons and metadata are linked',()=>{
  assert.equal(manifest.orientation,'landscape');assert.ok(['fullscreen','standalone'].includes(manifest.display));assert.ok(manifest.icons.length>=2);
  for(const icon of manifest.icons)assert.ok(existsSync(icon.src),icon.src);
 });
+test('twenty seconds of battle advance and render in every environment without errors',()=>game()(`
+ for(const [night,weather] of [[false,'clear'],[true,'rain'],[false,'gusts']]){
+  SETTINGS.night=night;SETTINGS.weather=weather;startQuickBattle();for(const type of ['TANK','AA','INF'])buy(1,type);
+  for(const type of ['TANK','INF','INF','AA'])spawnUnit(-1,type).aiReleased=true;
+  for(let i=0;i<1200;i++){advance(1/60);if(i%6===0)render();}
+  assert.ok(G.time>19.9&&G.time<20.1);G.paused=true;render();OVERLAY='controls';render();OVERLAY='';G.paused=false;
+ }
+ SETTINGS.night=false;SETTINGS.weather='clear';
+`));

@@ -28,7 +28,7 @@ function mobile(){
  const sandbox={document,Image:class{},addEventListener:(type,fn)=>{if(!events.has(type))events.set(type,[]);events.get(type).push(fn);},requestAnimationFrame:noop,performance:{now:()=>0},location:{search:'?touch=1'},URLSearchParams,matchMedia:()=>({matches:true}),innerWidth:844,innerHeight:390,setTimeout:noop,window:{},Math,assert,
   emit:(id,type,pointerId=1,x=710,y=240)=>get(id).dispatchEvent({type,pointerId,clientX:x,clientY:y,preventDefault:noop,detail:1}),
   globalEvent:type=>{for(const fn of events.get(type)||[])fn();},docEvent:type=>docEvents.get(type)(),node:get};
- vm.createContext(sandbox);vm.runInContext(source+'\nASSETS_OK=true;AUDIO_MUTED=true;ac=()=>({state:"running"});',sandbox);
+ vm.createContext(sandbox);vm.runInContext(source+'\nASSETS_OK=true;AUDIO_MUTED=true;ac=()=>({state:"running"});PROGRESS.lastMode="quick";',sandbox);
  vm.runInContext(readFileSync('mobile.js','utf8'),sandbox);
  return code=>vm.runInContext(code,sandbox);
 }
@@ -145,4 +145,16 @@ test('opening a different mobile panel restores its heading without resetting an
  emit('m-primary','click');TOUCH.render();emit('m-units','click');TOUCH.render();assert.equal(panel.scrollTop,0);
  panel.scrollTop=180;TOUCH.render();assert.equal(panel.scrollTop,180);
  emit('m-primary','click');TOUCH.render();emit('m-pause','click');TOUCH.render();assert.equal(panel.scrollTop,0);
+`));
+test('mobile pause can quit to the menu, which offers quick battle and combat school',()=>mobile()(`
+ emit('m-primary','click');assert.equal(G.state,'play');emit('m-pause','click');TOUCH.render();
+ assert.equal(node('m-quit').hidden,false);emit('m-quit','click');assert.equal(G.state,'menu');TOUCH.render();assert.equal(node('m-quit').hidden,true);
+ assert.equal(node('m-fullscreen').hidden,true);
+ emit('m-combat','click');assert.equal(G.tutorial.combat,true);TOUCH.render();assert.ok(node('m-training').textContent.includes('COMMAND'));
+ newGame();PROGRESS.lastMode='campaign';TOUCH.render();assert.equal(node('m-quick').hidden,false);emit('m-quick','click');assert.equal(G.state,'play');assert.equal(G.tutorial,null);
+`));
+test('a first-time mobile player is pointed at training, and missile warnings use the shared check',()=>mobile()(`
+ PROGRESS.lastMode=null;PROGRESS.lessons=0;TOUCH.render();assert.equal(node('m-primary').textContent,'Start training');
+ emit('m-primary','click');assert.ok(G.tutorial);assert.ok(!G.tutorial.advanced);
+ newGame();emit('m-quick','click');const p=G.helis[0];G.missiles.push(mkMissile(p.x+600,p.y,p,-1));TOUCH.render();assert.ok(node('m-notice').textContent.includes('MISSILE'));
 `));

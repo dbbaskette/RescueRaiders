@@ -14,11 +14,36 @@ Your helicopter supports the convoy with guns, bombs, missiles and troop transpo
 - **Space / FIRE:** hold to fire. The small gun-direction mark and four pips ahead of the helicopter show weapon readiness.
 - **Hold B / BOMB:** show the trajectory and estimated time to ground; release to drop once. Esc, dragging off the touch button, pausing or losing focus cancels the preview.
 - **M / MISSILE:** launch at the selected aircraft or ground target. Brackets appear while engaging, rather than cluttering ordinary flight.
-- **C / FLARE:** launch decoys that can divert incoming missiles.
-- **P / pause button:** pause. Leaving the page, losing focus or rotating a phone to portrait also pauses. Resume explicitly.
+- **C / FLARE:** launch decoys that can divert incoming missiles. The helicopter carries four, restocked at HQ. A missile that connects costs about 38 hull on Normal (27 on Recruit, 46 on Veteran), so a fresh aircraft survives two.
+- **P, Esc / pause button:** pause. Esc first cancels a bomb preview. The pause screen changes sound, camera shake, convoy escorts and fullscreen, restarts the mission or returns to the main menu. Leaving the page, losing focus or rotating a phone to portrait also pauses. Resume explicitly.
+- **H** on the menu or pause screen opens the controls reference for keyboard and gamepad.
 - **Click or tap radar:** inspect a sector for 2.5 seconds; flight input restores camera tracking.
 
-Damage flashes indicate the incoming direction. Critical hull and low fuel have visual and audible cautions. The enemy **HQ breach** timer estimates uninterrupted Van travel; combat, assembly and escorts can delay arrival. Full, reduced and disabled camera shake settings are available and saved.
+When an enemy missile is tracking you, a **MISSILE INBOUND** label and a bearing mark appear beside the helicopter with a repeating lock tone; they clear when a flare decoys the missile. Damage flashes indicate the incoming direction. Critical hull and low fuel have visual and audible cautions. The enemy **HQ breach** timer estimates uninterrupted Van travel; combat, assembly and escorts can delay arrival. Full, reduced and disabled camera shake settings are available and saved.
+
+### Gamepad
+
+A standard-layout gamepad takes control as soon as a button is pressed, and any key hands control back to the keyboard. The left stick flies and, like the touch joystick, hovers when released.
+
+| Button | Action |
+| --- | --- |
+| Left stick | Fly |
+| A or RT | Fire the gun |
+| X | Hold to preview a bomb, release to drop |
+| B / Y | Missile / flares |
+| RB | Board, unload, or parachute one troop aloft |
+| LB / LT | Select passenger / drop the selected passenger |
+| D-pad up / down / left | Advance / Hold / Rally |
+| D-pad right or Back | Next command group |
+| Start | Pause, or confirm on the menu and debrief |
+
+Reinforcements are bought with the keyboard, mouse or touch.
+
+### Display and installation
+
+The view is always 16:9. It renders at the display's pixel density, capped at 2× (1.5× on touch), and the simulation runs in fixed 1/120 s steps, so game speed is the same on 30, 60 and 120 Hz screens. If frames stay slow for several seconds the game lowers its particle budget and render resolution for the rest of that sortie.
+
+**Fullscreen** is on the menu and pause screen where the browser supports it. On a phone, add the page to the home screen to launch it full-screen in landscape. Ground units are drawn slightly larger than their hit boxes with a thin team-colored outline (teal friendly, red enemy) so they read against the terrain; collisions are unchanged.
 
 ## Troop transport
 
@@ -42,6 +67,8 @@ Parachutists inherit horizontal aircraft motion, fall for 0.25 seconds before de
 | 4 | Demo Van | $250 | Reach enemy HQ; one active per side / Support |
 | 5 | Engineer | $40 | Capture turrets and repair defenses / Infantry |
 
+**Funds:** you earn $25 every three seconds plus $5 for each bunker you hold, and every enemy unit destroyed pays a bounty of a quarter of its cost ($5 infantry, $10 engineer, $30 tank, $40 AA truck, $65 Van). The enemy earns its difficulty income plus $5 per bunker it holds and can bank at most $800, so taking territory starves its armor.
+
 Desktop: select a group with **Tab** or the four group buttons, then **Z Advance**, **X Hold** or **V Rally**. Mobile: open **Command**, select the group and order. Command pauses the battle while you decide. On a smaller phone, swipe vertically—even over buttons—to reach the rest of the panel. Opening a different menu restores its heading; remaining in that menu preserves your scroll position.
 
 - **Advance:** move toward enemy HQ using escort spacing.
@@ -49,11 +76,13 @@ Desktop: select a group with **Tab** or the four group buttons, then **Z Advance
 - **Rally:** move toward the helicopter's location at the moment of the order, then stop nearby. It does not continuously chase the aircraft.
 - **All:** apply the order to every group. New reinforcements inherit their group's current order. Stranded rescue troops and downed pilots wait for recovery.
 
-With **Convoy escorts** enabled, tanks overtake and lead infantry, AA and the Van. Infantry stays approximately 65 world units behind the foremost tank, AA 125 and the Van 210. Faster followers close gaps without overtaking the lead armor. A Van waits when it has no surviving infantry, tank or AA escort; buy replacement protection or turn escort behavior off. Engineers remain free to reach their work sites. Explicit Hold and Rally orders take precedence over formation movement.
+With **Convoy escorts** enabled, tanks overtake and lead infantry, AA and the Van. Infantry stays approximately 65 world units behind the foremost tank, AA 125 and the Van 210. Faster followers close gaps without overtaking the lead armor. A Van waits when it has no surviving infantry, tank or AA escort; buy replacement protection or turn escort behavior off. Engineers remain free to reach their work sites. AA trucks fire on the move, so they keep their place in the column while engaging aircraft. Explicit Hold and Rally orders take precedence over formation movement.
 
-Switch convoy escorts on/off in pause on desktop, or Command on mobile. This is a sortie setting. Troops moving in the same direction can pass units assigned a rear formation position; this represents separate lanes within the side-on battlefield.
+**Final run:** escorts stop to fight short of the opposing HQ, so within 680 world units of it the Van leaves formation, passes its escorts and drives for the line at full speed. It is unprotected for those seconds: clear the approach first, or **Hold** the Support group and release it with **Advance** when the way is open. The enemy Van makes the same run at your HQ.
 
-The enemy assembles combined-arms waves, releasing a column when it has a tank, AA and three infantry or after 45 seconds of waiting. Engineers can turn back to reclaim nearby turrets. Vans require two armor/AA escorts before purchase and obey escort spacing. Brief radio captions announce column movements.
+Switch convoy escorts on/off in pause on desktop, or Command on mobile. This is a sortie setting for your column only; the enemy always keeps formation. Troops moving in the same direction can pass units assigned a rear formation position; this represents separate lanes within the side-on battlefield.
+
+The enemy assembles combined-arms waves, releasing a column when it has a tank, AA and three infantry or after 45 seconds of waiting. Engineers can turn back to reclaim nearby turrets. Vans require two armor/AA escorts before purchase, obey escort spacing and make the same final run. Brief radio captions announce column movements.
 
 ## Bunkers, turrets and service
 
@@ -110,14 +139,18 @@ Difficulty, sound, camera shake and environment preferences also persist. Storag
 | Normal | $300 | 100% | 4 seconds | 70 seconds |
 | Veteran | $220 | 120% | 3 seconds | 50 seconds |
 
-Enemy income also scales. Hard-landing and fuel-exhaustion losses do not receive attack-damage scaling.
+Enemy base income is $18, $22 or $27 every three seconds, before bunkers. Hard-landing and fuel-exhaustion losses do not receive attack-damage scaling.
 
-**Training** / menu **T** covers flight, bombs, pickup and capture. **Flight Academy** / menu **Y** covers boarding mixed cargo, selecting an engineer for a parachute insertion, capturing and repairing a turret, and holding/rallying armor. Both provide the troops needed, disable enemy deployments and restart if the helicopter is lost. Use the aircraft to recover/reposition an engineer who lands away from the target turret.
+As a baseline, an HQ left completely undefended falls to the enemy Van after about 7:00 on Recruit, 5:40 on Normal and 5:35 on Veteran. `node tools/balance.cjs` replays that check, and a ground-only stalemate check, after tuning changes.
+
+**Training** / menu **T** covers flight, bombs, pickup and capture. **Flight Academy** / menu **Y** covers boarding mixed cargo, selecting an engineer for a parachute insertion, capturing and repairing a turret, and holding/rallying armor. **Combat School** / menu **K** covers buying a unit, refuelling at HQ, decoying a missile with flares and crossing a hostile balloon cable; its training missile is relaunched until one is decoyed, and hull and flares are restored each time. All three disable enemy deployments and restart if the helicopter is lost. Finishing one offers the next, and the last leads into the campaign.
+
+The large menu button (**Enter**) offers the next unfinished lesson on a first visit and, once you have flown a mission, the mode you flew last: Quick Battle, or your campaign checkpoint. Use the aircraft to recover/reposition an engineer who lands away from the target turret.
 
 ## Debrief and replay
 
-The debrief reports rescued troops/pilots, captured bases, convoy losses and the last aircraft-loss cause. **Watch final moments** / **R** plays a bounded history of up to 64 visual snapshots, sampled roughly eight times per second.
+The debrief reports rescued troops/pilots, captured bases, convoy losses and the last aircraft-loss cause. A win earns two stars; three stars need a win with no helicopter lost inside the par time (12:00 for Quick Battle and Breakthrough, 2:30 for Foothold, 4:00 for Bring them home). Training has no par. **Watch final moments** / **R** plays a bounded history of up to 64 visual snapshots, sampled roughly eight times per second.
 
 Playback interpolates between snapshots using stable entity identities. It follows a finishing Van, recent ordnance or the helicopter; **F / camera button** switches to the original view. **Space / speed button** changes between normal speed and 0.35× slow motion. **Esc / Back to debrief** exits. Replay is silent and never resumes, damages or awards points to the live battle. It is a visual recording, not a deterministic re-simulation.
 
-Cosmetic budgets bound particles (180 on touch / 700 on desktop), wrecks, discarded canopies and replay history. Fixed terrain is cached in up to 40 tiles, with grass and rotor wash remaining animated.
+Cosmetic budgets bound particles (320 on touch / 700 on desktop, stepping down to 140 / 280 when frames stay slow), night light pools, wrecks, discarded canopies and replay history. Fixed terrain is cached in up to 40 tiles, with grass and rotor wash remaining animated.

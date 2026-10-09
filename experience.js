@@ -1,11 +1,19 @@
 'use strict';
 // Shared mission, transport, command and presentation behavior for both interfaces.
 const MISSIONS=[
-  {name:'Foothold',brief:'Capture the marked bunker.',kind:'capture',bunkers:[1500,3300],turrets:[1100,2700]},
-  {name:'Bring them home',brief:'Recover four stranded troops and return them to HQ.',kind:'rescue',bunkers:[1300,3600,6000],turrets:[1750,3100,5200]},
-  {name:'Breakthrough',brief:'Escort your Van to enemy HQ.',kind:'escort',bunkers:[1900,3700,5500,7200],turrets:[1400,2900,4600,6300,7800]}
+  {name:'Foothold',brief:'Capture the marked bunker.',kind:'capture',par:150,bunkers:[1500,3300],turrets:[1100,2700]},
+  {name:'Bring them home',brief:'Recover four stranded troops and return them to HQ.',kind:'rescue',par:240,bunkers:[1300,3600,6000],turrets:[1750,3100,5200]},
+  {name:'Breakthrough',brief:'Escort your Van to enemy HQ.',kind:'escort',par:720,bunkers:[1900,3700,5500,7200],turrets:[1400,2900,4600,6300,7800]}
 ];
 SETTINGS.shake=1;
+// Three stars need a win with no helicopter lost inside the par; an escorted convoy needs about five minutes to cross the map.
+const QUICK_PAR=720;
+function sortiePar(){return G.tutorial?null:G.campaign===null?QUICK_PAR:MISSIONS[G.campaign].par;}
+function sortieRating(){
+  if(G.state!=='win')return {stars:1,rank:'HONORABLE SERVICE SPECIALIST'};
+  const par=sortiePar();
+  return G.stats.helisLost===0&&(par===null||G.time<=par)?{stars:3,rank:'ACE FLIGHT COMMANDER'}:{stars:2,rank:'VETERAN SQUADRON LEADER'};
+}
 function initExperience(g){
   g.orders={mode:'advance',x:0};g.campaign=null;g.selectedCargo=0;g.casualties=[];
   g.replayFrames=[];g.replayClock=0;g.replay=null;g.cameraLead=0;
@@ -14,7 +22,7 @@ function initExperience(g){
 }
 initExperience(G);
 function startCampaign(index=0){
-  index=clamp(index,0,MISSIONS.length-1);newGame();G.state='play';G.campaign=index;saveCheckpoint(index);
+  index=clamp(index,0,MISSIONS.length-1);newGame();G.state='play';G.campaign=index;PROGRESS.lastMode='campaign';saveCheckpoint(index);
   if(index===2)G.environment.night=true;
   const mission=MISSIONS[index],template=G.bunkers[0];
   G.bunkers=mission.bunkers.map(x=>({...template,x}));
@@ -25,15 +33,25 @@ function startCampaign(index=0){
     if(index===1)u.rescue=true;
   }
 }
+// Enter and the large debrief button always mean "the next sensible sortie": lessons chain into the campaign.
 function nextSortie(){
+  if(G.state==='menu'){primarySortie().start();return;}
+  if(G.tutorial){
+    const next=LESSONS[lessonIndex()+1];
+    if(G.state!=='win')restartMission();else if(next)next.start();else startCampaign();
+    return;
+  }
   if(G.campaign!==null){
     if(G.state==='win'&&G.campaign===MISSIONS.length-1){newGame();return;}
     startCampaign(G.campaign+(G.state==='win'?1:0));
-  }else{newGame();G.state='play';}
+  }else startQuickBattle();
 }
-function sortieLabel(){return G.campaign===null?'Fly again':G.state!=='win'?'Retry mission':G.campaign===2?'Campaign complete · Menu':'Next mission';}
+function sortieLabel(){
+  if(G.tutorial){const next=LESSONS[lessonIndex()+1];return G.state!=='win'?'Retry lesson':next?'Next lesson: '+next.name:'Start campaign';}
+  return G.campaign===null?'Fly again':G.state!=='win'?'Retry mission':G.campaign===2?'Campaign complete · Menu':'Next mission';
+}
 function missionText(){
-  if(G.tutorial)return G.tutorial.advanced?'Flight academy · Advanced operations':'Training sortie · Flight basics';
+  if(G.tutorial)return G.tutorial.combat?'Combat school · Reinforce, refuel, flares and cables':G.tutorial.advanced?'Flight academy · Advanced operations':'Training sortie · Flight basics';
   if(G.campaign===null)return 'Quick battle · Escort your Van to enemy HQ';
   const m=MISSIONS[G.campaign],aboard=cargoManifest(G.helis[0]).filter(c=>c.rescue).length;
   return `${G.campaign+1}/3 ${m.name} · ${m.kind==='rescue'?(aboard?aboard+' aboard · Return to HQ':G.stats.rescued+'/4 home · Recover marked troops'):m.brief}`;
@@ -51,7 +69,7 @@ function drawMissionMarker(){
   const actual=objective.x-G.camX,x=clamp(actual,36,W-36),y=GROUND-105;
   cx.save();cx.strokeStyle='#d6c690';cx.fillStyle='#d6c690';cx.lineWidth=1;
   cx.beginPath();cx.moveTo(x-5,y);cx.lineTo(x,y+5);cx.lineTo(x+5,y);cx.stroke();
-  cx.font='10px monospace';cx.textAlign=actual<36?'left':actual>W-36?'right':'center';
+  cx.font='10px '+FONT;cx.textAlign=actual<36?'left':actual>W-36?'right':'center';
   cx.fillText(objective.label+(actual<0?' ◀':actual>W?' ▶':''),x,y-7);cx.restore();
 }
 function downedParatrooper(u){
@@ -105,7 +123,7 @@ function drawLandingCue(){
   const p=G.helis[0],cue=landingCue(p);if(!cue)return;const x=p.x-G.camX;
   cx.save();cx.strokeStyle=cue.safe?'#aecbab':'#e6ae72';cx.fillStyle=cue.safe?'rgba(150,195,154,.12)':'rgba(220,153,100,.12)';cx.lineWidth=1;
   cx.beginPath();cx.ellipse(x,GROUND-2,46,7,0,0,7);cx.fill();cx.stroke();
-  cx.fillStyle=cue.safe?'#c4d8bc':'#ecc195';cx.font='10px monospace';cx.textAlign='center';
+  cx.fillStyle=cue.safe?'#c4d8bc':'#ecc195';cx.font='10px '+FONT;cx.textAlign='center';
   cx.fillText(cue.label+(cue.nearby?` · ${cue.nearby} troops · ${cue.seats} seats`:''),x,GROUND-65);
   if(cue.progress){cx.fillStyle='#263d35';cx.fillRect(x-24,GROUND-14,48,3);cx.fillStyle='#b4dab4';cx.fillRect(x-24,GROUND-14,48*cue.progress,3);}cx.restore();
 }
@@ -234,19 +252,26 @@ function renderReplay(){
   if(TOUCH.active&&TOUCH.render)TOUCH.render();
 }
 function debriefDetails(){return `${G.stats.rescued} troops + ${G.stats.pilotsRescued} pilots rescued · ${G.stats.bunkersCap} bases · ${G.stats.convoyLost} convoy losses · Last helicopter loss: ${G.stats.lastLoss}`;}
-function experienceButton(id,label,x,y,w,action,active=false){
-  G.buttons.push({id,x,y,w,h:28,onClick:action});cx.fillStyle=active?'#365445':'rgba(12,25,32,.9)';cx.fillRect(x,y,w,28);
-  cx.strokeStyle=active?'#a3c9a4':'#52685f';cx.strokeRect(x,y,w,28);cx.fillStyle='#d4dfd0';cx.font='11px monospace';cx.textAlign='center';cx.fillText(label,x+w/2,y+18);
+// One button style for every desktop control. opts: h, size, primary, danger, disabled.
+function experienceButton(id,label,x,y,w,action,active=false,opts={}){
+  const h=opts.h||28,disabled=!!opts.disabled,hover=!disabled&&mouse.x>=x&&mouse.x<=x+w&&mouse.y>=y&&mouse.y<=y+h;
+  G.buttons.push(disabled?{id,x,y,w,h,disabled:true}:{id,x,y,w,h,onClick:action});
+  const [fill,edge,ink]=disabled?['#0e111a','#222a3a','#5a6478']:
+    opts.primary?[hover?'#225533':'#143520',hover?'#77ff88':'#44bb55',hover?'#ffffff':'#8dff8d']:
+    opts.danger?[hover?'#442222':'#2a1616',hover?'#ff7766':'#aa4444','#ff8877']:
+    active?['#1d3b5e','#4db2ff','#ffffff']:[hover?'#1a2a46':'#101726',hover?'#70b0ff':'#2e4162',hover?'#ffffff':'#cdd6ea'];
+  cx.save();cx.fillStyle=fill;cx.strokeStyle=edge;cx.lineWidth=hover||active?1.8:1.2;
+  cx.beginPath();cx.roundRect(x,y,w,h,4);cx.fill();cx.stroke();
+  cx.fillStyle=ink;cx.font=(opts.primary?'bold ':'')+(opts.size||11)+'px '+FONT;cx.textAlign='center';cx.textBaseline='middle';
+  cx.fillText(label,x+w/2,y+h/2+1);cx.restore();
 }
 function drawExperienceUI(){
   if(TOUCH.active)return;cx.save();
   if(G.state==='play'&&!G.paused){
-    cx.font='11px monospace';cx.fillStyle='#d0d9c6';cx.textAlign='center';cx.fillText(missionText(),644,27);
+    cx.font='11px '+FONT;cx.fillStyle='#d0d9c6';cx.textAlign='center';cx.fillText(missionText(),644,27);
     if(!G.tutorial||G.tutorial.advanced)for(const [i,mode] of ['advance','hold','rally'].entries())experienceButton('order_'+mode,['Advance [Z]','Hold [X]','Rally here [V]'][i],424+i*146,39,138,()=>setOrder(mode),activeOrder().mode===mode);
-  }else if(G.state==='menu')experienceButton('campaign','Campaign · 3 missions [C]',820,580,240,()=>startCampaign());
-  else if(G.paused)experienceButton('shake','Camera shake: '+shakeLabel(),490,432,300,cycleShake);
-  else if(G.state==='win'||G.state==='over'){
-    cx.font='11px monospace';cx.fillStyle='#c5d2bf';cx.textAlign='center';cx.fillText(debriefDetails(),W/2,460);
+  }else if(!G.paused&&(G.state==='win'||G.state==='over')){
+    cx.font='11px '+FONT;cx.fillStyle='#c5d2bf';cx.textAlign='center';cx.fillText(debriefDetails(),W/2,460);
     if(G.replayFrames.length>1)experienceButton('replay','Watch final moments [R]',490,478,300,startReplay);
   }cx.restore();
 }

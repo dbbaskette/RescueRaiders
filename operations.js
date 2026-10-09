@@ -6,8 +6,10 @@ function initOperations(g){
   g.nextReplayId=1;g.enemyMuster=0;g.radio=null;g.radioUntil=0;
   g.stats.pilotsRescued=0;g.academyEvents={};
 }
+// lastMode and lessons let the menu point a first-time player at training and a returning one at what they flew last.
+const MODES=['quick','campaign','training','academy','combat'];
 function loadProgress(){
-  const fallback={version:1,checkpoint:null};
+  const fallback={version:1,checkpoint:null,lastMode:null,lessons:0};
   try{
     const data=JSON.parse(localStorage.getItem('rescue-raiders.operations.v1'));
     if(!data||data.version!==1)return fallback;
@@ -17,7 +19,8 @@ function loadProgress(){
     if(['clear','gusts','rain'].includes(prefs.weather))SETTINGS.weather=prefs.weather;
     if(typeof prefs.night==='boolean')SETTINGS.night=prefs.night;
     if(typeof prefs.muted==='boolean')AUDIO_MUTED=prefs.muted;
-    return {version:1,checkpoint:Number.isInteger(data.checkpoint)&&data.checkpoint>=0&&data.checkpoint<3?data.checkpoint:null,complete:data.complete===true};
+    return {version:1,checkpoint:Number.isInteger(data.checkpoint)&&data.checkpoint>=0&&data.checkpoint<3?data.checkpoint:null,complete:data.complete===true,
+      lastMode:MODES.includes(data.lastMode)?data.lastMode:null,lessons:Number.isInteger(data.lessons)?clamp(data.lessons,0,3):0};
   }catch{return fallback;}
 }
 const PROGRESS=loadProgress();
@@ -28,6 +31,22 @@ function saveProgress(){
 function setDifficulty(id){if(Object.hasOwn(DIFFICULTIES,id)){SETTINGS.difficulty=id;saveProgress();}}
 function saveCheckpoint(index,complete=false){PROGRESS.checkpoint=index;PROGRESS.complete=complete;saveProgress();}
 function resumeCampaign(){if(PROGRESS.checkpoint!==null)startCampaign(PROGRESS.checkpoint);}
+function rememberMode(mode){if(PROGRESS.lastMode!==mode){PROGRESS.lastMode=mode;saveProgress();}}
+function startQuickBattle(){newGame();G.state='play';rememberMode('quick');}
+const LESSONS=[
+  {id:'training',name:'Training sortie',short:'Training',key:'T',start:()=>startTutorial()},
+  {id:'academy',name:'Flight academy',short:'Academy',key:'Y',start:()=>startAcademy()},
+  {id:'combat',name:'Combat school',short:'Combat',key:'K',start:()=>startCombatSchool()}
+];
+function lessonIndex(){return !G.tutorial?-1:G.tutorial.combat?2:G.tutorial.advanced?1:0;}
+function completeLesson(){const done=lessonIndex()+1;if(done>PROGRESS.lessons){PROGRESS.lessons=done;saveProgress();}}
+function primarySortie(){
+  const campaign=PROGRESS.checkpoint!==null?{id:'campaign',label:'Resume campaign · mission '+(PROGRESS.checkpoint+1),start:resumeCampaign}:{id:'campaign',label:'Start campaign',start:()=>startCampaign()};
+  if(PROGRESS.lastMode==='quick')return {id:'quick',label:'Quick battle',start:startQuickBattle};
+  if(PROGRESS.lastMode==='campaign')return campaign;
+  const lesson=LESSONS[PROGRESS.lessons];
+  return lesson?{id:lesson.id,label:PROGRESS.lessons?'Next lesson: '+lesson.name:'Start training',start:lesson.start}:campaign;
+}
 function cycleWeather(){const options=['clear','gusts','rain'];SETTINGS.weather=options[(options.indexOf(SETTINGS.weather||'clear')+1)%options.length];saveProgress();}
 function toggleNight(){SETTINGS.night=!SETTINGS.night;saveProgress();}
 function weatherLabel(){return {clear:'Clear',gusts:'Gusty',rain:'Rain'}[SETTINGS.weather||'clear'];}
@@ -44,7 +63,7 @@ function applyWind(h,dt){
   h.vx+=windAt(G.time)*factor*dt;
 }
 function returnGuidance(p=G.helis[0]){
-  if(p.dead||G.tutorial)return null;
+  if(p.dead||G.tutorial&&!G.tutorial.combat)return null;
   const pads=[{x:PLAYER_X,name:'HQ',kind:'hq'},...G.bunkers.filter(b=>b.owner===1).map(b=>({x:forwardPadX(b),name:'Forward pad',kind:'forward'}))];
   const pad=pads.sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x))[0];
   const distance=Math.abs(pad.x-p.x),direction=Math.sign(pad.x-p.x)||-1;
@@ -63,9 +82,14 @@ function activeOrder(){
 }
 function orderFor(u){return G.groupOrders[unitGroup(u)]||G.orders;}
 function formationRank(u){return {TANK:4,INF:3,ENG:3,AA:2,VAN:1}[u.type];}
-function canPass(u,o){return G.formation&&u.side===o.side&&formationRank(u)>formationRank(o)&&!(u.side===1&&orderFor(u).mode!=='advance');}
+// Escorts stop to fight short of the opposing HQ, so a Van inside its final run leaves formation and may pass them.
+const VAN_DASH=680;
+function vanDash(u){return u.type==='VAN'&&(u.side>0?ENEMY_X-70-u.x:u.x-(PLAYER_X+70))<VAN_DASH;}
+// The escort setting is the player's; the enemy column always keeps formation.
+function formationOn(side){return side!==1||G.formation;}
+function canPass(u,o){return u.side===o.side&&(vanDash(u)||formationOn(u.side)&&formationRank(u)>formationRank(o)&&!(u.side===1&&orderFor(u).mode!=='advance'));}
 function convoyMovement(u){
-  if(!G.formation||u.type==='TANK'||u.type==='ENG')return {move:true,dir:u.side};
+  if(vanDash(u)||!formationOn(u.side)||u.type==='TANK'||u.type==='ENG')return {move:true,dir:u.side};
   const allies=G.units.filter(o=>o!==u&&o.side===u.side&&!o.rescue&&!o.pilot&&o.type!=='ENG'&&(u.side===1||o.aiReleased));
   const tanks=allies.filter(o=>o.type==='TANK');
   const escorts=tanks.length?tanks:allies.filter(o=>o.type==='INF'||o.type==='AA');
@@ -111,7 +135,7 @@ function recoveryMarker(){
   const pilot=G.units.find(u=>u.pilot)||G.paratroopers.find(u=>u.pilot);
   if(!pilot||G.replayView)return;
   const x=clamp(pilot.x-G.camX,30,W-30),y=(pilot.y??GROUND)-48;
-  cx.save();cx.fillStyle='#eacb8c';cx.font='10px monospace';cx.textAlign='center';cx.fillText('✚ DOWNED PILOT',x,y);cx.restore();
+  cx.save();cx.fillStyle='#eacb8c';cx.font='10px '+FONT;cx.textAlign='center';cx.fillText('✚ DOWNED PILOT',x,y);cx.restore();
 }
 
 function startAcademy(){
@@ -119,8 +143,40 @@ function startAcademy(){
   G.bunkers=[];G.turrets=[{x:1080,y:GROUND-22,type:'TURRET',side:0,hp:0,maxhp:100,cd:1}];
   const p=G.helis[0];Object.assign(p,{x:650,y:GROUND-22});
   const engineer=spawnUnit(1,'ENG');engineer.x=630;const infantry=spawnUnit(1,'INF');infantry.x=610;
+  rememberMode('academy');
+}
+// Combat school covers what the first two lessons leave out: buying units, refuelling, flares and balloon cables.
+function startCombatSchool(){
+  startTutorial();G.tutorial={advanced:true,combat:true,step:0,missileAt:0};G.environment={weather:'clear',night:false};
+  G.turrets=[];G.funds=200;G.groupOrders.infantry={mode:'hold',x:0};
+  // One hostile balloon over an empty bunker: a live cable to cross and nothing that shoots back.
+  G.bunkers=[{x:900,y:GROUND-20,type:'BUNKER',owner:-1,side:-1,hp:0,maxhp:90,garrison:0,cd:2,capPulse:0,
+    balloonHp:40,balloonMax:40,balloonDead:false,balloonRespawn:0,cableHp:30,cableBroken:false}];
+  rememberMode('combat');
+}
+function combatHint(){
+  return [
+    TOUCH.active?'1/4 · Open COMMAND and deploy Infantry from HQ':'1/4 · Reinforce: press 1 or click INFANTRY to deploy from HQ',
+    '2/4 · Low fuel: land on the HQ pad and stay until fuel passes 60%',
+    TOUCH.active?'3/4 · Climb. When MISSILE shows, tap FLARE':'3/4 · Climb. When MISSILE INBOUND shows, press C for flares',
+    '4/4 · Balloon ahead: fly over it or shoot its cable, then pass it'
+  ][G.tutorial.step];
+}
+function updateCombatSchool(){
+  const t=G.tutorial,p=G.helis[0];
+  if(t.step===0&&Object.values(G.stats.deployed).some(Boolean)){t.step=1;p.fuel=Math.min(p.fuel,LOW_FUEL-4);SFX.blip();}
+  else if(t.step===1&&p.service==='hq'&&p.fuel>=60){t.step=2;t.missileAt=G.time+2;SFX.blip();}
+  else if(t.step===2){
+    if(G.academyEvents.decoyed){t.step=3;p.hp=p.maxhp;SFX.blip();}
+    // A training round is relaunched until one is decoyed; hull and flares are restored so a miss costs nothing.
+    else if(p.y<GROUND-150&&G.time>=t.missileAt&&!incomingMissile()){
+      t.missileAt=G.time+7;p.hp=p.maxhp;p.flares=FLARES;
+      G.missiles.push(mkMissile(Math.min(p.x+700,1480),170,p,-1));SFX.missile(p.x+700);
+    }
+  }else if(t.step===3&&p.x>=G.bunkers[0].x+200)endGame(true,'COMBAT SCHOOL COMPLETE — READY FOR THE CAMPAIGN');
 }
 function academyHint(){
+  if(G.tutorial.combat)return combatHint();
   return [
     '1/5 · Land at 650m; board both troops',
     TOUCH.active?'2/5 · Climb above 130m; COMMAND → select ENG → Deploy selected near 1050m':'2/5 · Climb >130m; Q: engineer · F: drop near 1050m',
@@ -130,6 +186,7 @@ function academyHint(){
   ][G.tutorial.step];
 }
 function updateAcademy(){
+  if(G.tutorial.combat){updateCombatSchool();return;}
   const t=G.tutorial,p=G.helis[0],turret=G.turrets[0];
   if(t.step===0&&cargoManifest(p).some(c=>c.type==='ENG')&&p.cargo>=2)t.step=1;
   if(t.step===1&&G.academyEvents.engineerDrop)t.step=2;
@@ -166,13 +223,13 @@ function drawNight(){
   cx.save();
   const darkness=cx.createLinearGradient(0,0,0,GROUND);
   darkness.addColorStop(0,'rgba(4,11,29,.94)');darkness.addColorStop(.45,'rgba(7,17,34,.80)');darkness.addColorStop(1,'rgba(5,13,28,.52)');
-  cx.fillStyle=darkness;cx.fillRect(0,0,W,H);
+  cx.fillStyle=darkness;cx.fillRect(-24,-24,W+48,H+48);
   if(G.environment.weather!=='rain'){
     cx.fillStyle='rgba(192,213,222,.48)';for(let i=0;i<32;i++)cx.fillRect(hash(i+411)*W,110+hash(i+731)*115,1,1);
   }
   // Local light pools keep near-field hazards visible without illuminating the entire map.
   cx.globalCompositeOperation='screen';
-  function light(x,y,r,color){const glow=cx.createRadialGradient(x,y,1,x,y,r);glow.addColorStop(0,color);glow.addColorStop(1,'rgba(120,160,175,0)');cx.fillStyle=glow;cx.fillRect(x-r,y-r,r*2,r*2);}
+  function light(x,y,r,color){drawGlow('light',color,x,y,r);}
   for(const h of G.helis){
     if(h.dead||!onScreen(h.x))continue;const x=h.x-G.camX,tx=x+h.dir*100;
     cx.fillStyle='rgba(171,204,201,.055)';cx.beginPath();cx.moveTo(x+h.dir*24,h.y+6);cx.lineTo(tx+125,GROUND);cx.lineTo(tx-125,GROUND);cx.closePath();cx.fill();light(tx,GROUND,155,'rgba(179,203,183,.23)');
@@ -183,26 +240,24 @@ function drawNight(){
   for(const t of G.turrets){if(t.hp<=0||!onScreen(t.x))continue;const x=t.x-G.camX,angle=-Math.PI/2+Math.sin(G.time*.45+t.x)*.8;
     cx.fillStyle='rgba(187,203,196,.045)';cx.beginPath();cx.moveTo(x,GROUND-22);cx.lineTo(x+Math.cos(angle-.16)*400,GROUND-22+Math.sin(angle-.16)*400);cx.lineTo(x+Math.cos(angle+.16)*400,GROUND-22+Math.sin(angle+.16)*400);cx.closePath();cx.fill();}
   for(const u of G.units)if(u.fireFlash>0)light(u.x-G.camX,GROUND-18,60,'rgba(255,179,95,.4)');
-  for(const part of G.parts)if(part.add&&onScreen(part.x))light(part.x-G.camX,part.y,Math.min(80,(part.s||4)*5),'rgba(239,158,82,.13)');
+  // Pools from every spark overlap almost completely, and fill area is what a frame costs: the newest embers are enough.
+  for(let i=G.parts.length-1,pools=0;i>=0&&pools<40;i--){
+    const part=G.parts[i];if(!part.add||part.streak||!onScreen(part.x))continue;
+    pools++;light(part.x-G.camX,part.y,Math.min(80,(part.s||4)*5),'rgba(239,158,82,.13)');
+  }
   cx.restore();
 }
 function drawOperationsUI(){
   if(TOUCH.active)return;cx.save();
-  if(G.state==='menu'){
-    experienceButton('resume',PROGRESS.checkpoint===null?'No checkpoint yet':`Resume mission ${PROGRESS.checkpoint+1} [U]`,190,650,210,resumeCampaign);
-    experienceButton('academy','Flight academy [Y]',412,650,210,startAcademy);
-    experienceButton('weather','Weather: '+weatherLabel(),634,650,210,cycleWeather);
-    experienceButton('night',SETTINGS.night?'Night operations':'Day operations',856,650,210,toggleNight,SETTINGS.night);
-    if(PROGRESS.sessionOnly){cx.font='10px monospace';cx.fillStyle='#e1bf89';cx.textAlign='center';cx.fillText('Browser storage unavailable · checkpoints last only in this tab',W/2,698);}
-  }else if(G.state==='play'&&!G.paused){
+  if(G.state==='play'&&!G.paused){
     if(!G.tutorial||G.tutorial.advanced){
       for(const [i,group] of ['all','infantry','armor','support'].entries())experienceButton('group_'+group,group==='all'?'All [Tab]':group[0].toUpperCase()+group.slice(1),424+i*109,70,102,()=>selectGroup(group),G.group===group);
     }
     const nav=returnGuidance();
-    if(nav){cx.font='11px monospace';cx.textAlign='left';cx.fillStyle=nav.warning?'#f3c38a':'#aebdac';cx.fillStyle='rgba(10,23,29,.85)';cx.fillRect(15,137,370,23);cx.fillStyle=nav.warning?'#f3c38a':'#becbb8';cx.fillText(nav.label,24,152);}
-    if(G.radio){cx.font='10px monospace';cx.textAlign='center';cx.fillStyle='#d5caaa';cx.fillText(G.radio.text,W/2,113);}
+    if(nav){cx.font='11px '+FONT;cx.textAlign='left';cx.fillStyle=nav.warning?'#f3c38a':'#aebdac';cx.fillStyle='rgba(10,23,29,.85)';cx.fillRect(15,137,370,23);cx.fillStyle=nav.warning?'#f3c38a':'#becbb8';cx.fillText(nav.label,24,152);}
+    if(G.radio){cx.font='10px '+FONT;cx.textAlign='center';cx.fillStyle='#d5caaa';cx.fillText(G.radio.text,W/2,113);}
     if(canBailout())experienceButton('bailout','Bail out [J]',20,166,130,bailout);
-  }else if(G.paused){experienceButton('formation','Convoy escorts: '+(G.formation?'On':'Off'),490,468,300,()=>G.formation=!G.formation);}
+  }
   cx.restore();
 }
 initOperations(G);

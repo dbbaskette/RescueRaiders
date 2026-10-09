@@ -28,13 +28,15 @@ Escort your Demo Van to enemy HQ while protecting your own base. Airlift infantr
 | Automatic boarding and four individual cargo seats | Infantry, armor and support orders | Day and night operations |
 | Wind-aware bomb predictor | Tanks lead; AA and infantry cover the Van | Rain, wet ground and gusts |
 | Forward-pad fuel guidance | Engineers capture and repair defenses | Terrain wash, smoke, wrecks and positional audio |
+| Missile warning with bearing, four flares | Bunkers pay income; kills pay bounties | Team-outlined units that read against the terrain |
 | Pilot bailout and recovery bonuses | Three campaign missions with saved checkpoints | Smooth action replays with slow motion |
+| Keyboard, touch or gamepad | Three short lessons that lead into the campaign | Sharp on high-density screens |
 
 ## Night changes the view
 
 Landing lights, turret searchlights, muzzle flashes and illuminated pads pick out the battlefield. Rain reduces visibility; wind moves the aircraft, parachutes, smoke and bombs. The final campaign mission takes place at night. Quick Battle also lets you choose daylight or night and clear, gusty or rainy conditions.
 
-![Actual night operations with rain, searchlights and illuminated landing pads](docs/media/night-operations.png)
+![Actual night operations in rain: landing light, a turret searchlight and an incoming-missile warning](docs/media/night-operations.png)
 
 *Realism is expressed through readable 2D physics and visual approximations. This is an arcade tactics game, not a flight simulator.*
 
@@ -44,7 +46,7 @@ Open the same game on a phone or tablet in **landscape**. Steer with one thumb a
 
 ![Actual mobile interface with flight joystick, weapons, compact radar and return guidance](docs/media/mobile-operations.png)
 
-No installation or account required. Use [`?touch=1`](https://dbbaskette.github.io/RescueRaiders/?touch=1) to preview the touch interface on desktop.
+No installation or account required. Add the page to your home screen to fly full-screen in landscape without browser chrome; where the browser allows it, the menu also has a **Fullscreen** button. Use [`?touch=1`](https://dbbaskette.github.io/RescueRaiders/?touch=1) to preview the touch interface on desktop.
 
 ## Choose your sortie
 
@@ -56,6 +58,9 @@ No installation or account required. Use [`?touch=1`](https://dbbaskette.github.
 | **Campaign · 3 / Breakthrough** | Escort your Van past occupied defenses at night. |
 | **Training** | Learn flight, bombing, boarding and bunker capture without enemy deployments. |
 | **Flight Academy** | Practice selective cargo drops, parachutes, engineer capture/repair and armor orders. |
+| **Combat School** | Buy a unit, refuel at HQ, flare a missile and cross a balloon cable. |
+
+The three lessons take a few minutes each and lead into one another, then into the campaign. The large menu button follows you: it offers the next lesson on a first visit, and afterwards whatever you flew last.
 
 **Resume campaign** returns to the beginning of your saved mission. Difficulty, sound, shake and environment preferences are stored locally in your browser. No account or cloud save is involved; unavailable browser storage falls back to the current tab.
 
@@ -74,10 +79,15 @@ No installation or account required. Use [`?touch=1`](https://dbbaskette.github.
 | **Tab** | Select All, Infantry, Armor or Support |
 | **Z / X / V** | Advance / Hold / Rally selected group at helicopter |
 | **J** | Bail out when damaged, high enough, and a spare helicopter remains |
-| **P** | Pause; adjust shake or convoy escort behavior |
+| **P / Esc** | Pause: sound, shake, convoy escorts, fullscreen, restart or main menu. Esc cancels a bomb preview first |
+| **H** on menu or pause | Controls reference for keyboard and gamepad |
 | **Click radar** | Scan a sector; steering restores tracking |
-| **C / T / Y / U** on menu | New campaign / training / academy / resume campaign |
+| **Enter** on menu | Start the highlighted sortie |
+| **Q / C / U** on menu | Quick battle / new campaign / resume campaign |
+| **T / Y / K** on menu | Training / flight academy / combat school |
 | **R** on debrief | Replay; **Space** changes speed, **F** changes camera, **Esc** exits |
+
+**Gamepad** (standard layout; press any button to take control): left stick flies and hovers when released, **A** or **RT** fires, hold **X** to preview a bomb and release to drop, **B** missile, **Y** flares, **RB** board or unload, **LB** select passenger, **LT** drop the selected passenger, D-pad up / down / left for Advance / Hold / Rally and right for the next group, **Start** pauses or confirms. Reinforcements are bought with the keyboard, mouse or touch.
 
 Landing in front of friendly troops and holding still boards them automatically. **Support** includes AA trucks and the Van; engineers follow the **Infantry** group. See the [field manual](docs/FIELD_MANUAL.md) for costs, service limits and tactical details.
 
@@ -100,11 +110,16 @@ node --test tests/*.cjs
 
 | File | Responsibility |
 | --- | --- |
-| `index.html` | Simulation, rendering, audio and desktop interface |
-| `experience.js` | Missions, cargo, commands, camera and replay |
-| `operations.js` | Saves, weather/night, escorts, navigation, academy and pilot recovery |
+| `index.html` | Simulation, rendering, audio, input and desktop interface |
+| `experience.js` | Missions, cargo, commands, camera, replay and the shared desktop button |
+| `operations.js` | Saves, weather/night, escorts, navigation, lessons and pilot recovery |
 | `mobile.js` / `mobile.css` | Touch controls and responsive flight deck |
+| `manifest.webmanifest` | Install metadata: landscape, full-screen, icons |
+| `assets/process.py` | Rebuilds sprites and app icons from the `src_*.png` sources (needs Pillow) |
+| `tools/balance.cjs` | Headless sorties that report how an idle or ground-only player fares |
 | `tests/` | Dependency-free gameplay and mobile regression checks |
+
+The simulation advances in fixed 1/120 s steps and the canvas renders at the display's pixel density (capped at 2×, 1.5× on touch), so speed and sharpness do not depend on the device. The desktop HUD and menus are drawn on the canvas with one shared button style so they scale with the 16:9 view; the touch interface uses DOM controls for native touch targets. Enemy tints, hit flashes and wrecks are shaded from one base sprite at load.
 
 CI runs these tests on Node.js 22 and 24. The status and last-commit badges above update with the repository. The images are captures from the game; the [field manual](docs/FIELD_MANUAL.md) documents its rules.
 

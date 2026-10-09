@@ -10,7 +10,7 @@ function game(options={}){
  const gradient={addColorStop:noop};
  const ctx=new Proxy({measureText:t=>({width:t.length*6}),createLinearGradient:()=>gradient,createRadialGradient:()=>gradient},{get:(o,k)=>o[k]||noop});
  const sandbox={localStorage,readSaved:()=>JSON.parse(stored),document:{getElementById:()=>({getContext:()=>ctx,addEventListener:noop,style:{}})},Image:class{},addEventListener:noop,requestAnimationFrame:noop,performance:{now:()=>0},location:{search:''},setTimeout:noop,window:{},Math,assert};
- vm.createContext(sandbox);vm.runInContext(source+'\nAUDIO_MUTED=true;',sandbox);
+ vm.createContext(sandbox);vm.runInContext(source+'\nAUDIO_MUTED=true;ac=()=>({state:"running"});',sandbox);
  return code=>vm.runInContext(code,sandbox);
 }
 test('ground missile acquisition and impact use ground altitude',()=>game()(`
@@ -33,7 +33,7 @@ test('fuel burns in flight, refills at HQ, and engine-out prevents lift',()=>gam
 `));
 test('respawn restores fuel, flares and weapon readiness',()=>game()(`
  const p=G.helis[0];Object.assign(p,{dead:true,respawn:0,fuel:0,flares:0,cdMis:5});update(.016);
- assert.equal(p.dead,false);assert.equal(p.fuel,100);assert.equal(p.flares,3);assert.equal(p.cdMis,0);
+ assert.equal(p.dead,false);assert.equal(p.fuel,100);assert.equal(p.flares,FLARES);assert.equal(p.cdMis,0);
 `));
 test('radar holds scan and flight input resumes tracking',()=>game()(`
  G.state='play';handleCanvasClick(1100,40);const scan=G.camX;update(.1);
@@ -455,4 +455,159 @@ test('helicopter collision respects fuselage pitch and a visible cable crossing'
  assert.equal(heliBodyHit(h,1035,403),true);assert.equal(heliBodyHit(h,1060,403),false);assert.equal(heliBodyHit(h,1008,430),false);
  assert.equal(heliCableHit(h,{x:1030}),true);assert.equal(heliCableHit(h,{x:1050}),false);
  h.pitch=.2;assert.equal(heliBodyHit(h,1035,410),true);
+`));
+// Convoys are marched from spawn by stepping the simulation; teleporting a Van hides finish-line bugs.
+const MARCH=`
+ function march(side,escorts,seconds=420){
+  G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;G.helis[0].dead=true;G.helis[0].respawn=1e9;
+  for(const b of G.bunkers)Object.assign(b,{owner:0,side:0,hp:0,garrison:0,balloonDead:true,cableBroken:true,balloonRespawn:1e9});
+  for(const type of escorts)spawnUnit(side,type).aiReleased=true;
+  // The Van is bought after its escorts have left, so it starts behind them as it does in play.
+  for(let i=0;i<seconds*30&&G.state==='play';i++){if(i===600)spawnUnit(side,'VAN').aiReleased=true;update(1/30);}
+ }`;
+test('an escorted player Van crosses the enemy HQ line with convoy escorts on',()=>game()(MARCH+`
+ march(1,['TANK','AA','INF','INF','INF']);assert.equal(G.state,'win');assert.ok(G.endMsg.includes('DEMO VAN'));
+`));
+test('an escorted enemy Van crosses the player HQ line with convoy escorts on',()=>game()(MARCH+`
+ march(-1,['TANK','AA','INF','INF','INF']);assert.equal(G.state,'over');assert.ok(G.endMsg.includes('DEMO VAN'));
+`));
+test('the enemy column ignores the player escort setting and still finishes',()=>game()(MARCH+`
+ G.formation=false;march(-1,['TANK','AA','INF','INF','INF']);assert.equal(G.state,'over');assert.ok(G.endMsg.includes('DEMO VAN'));
+`));
+test('a player Van with escorts off still finishes',()=>game()(MARCH+`
+ G.formation=false;march(1,['TANK']);assert.equal(G.state,'win');
+`));
+test('the Van breaks formation for its final run only near the opposing HQ, and Hold still stops it',()=>game()(`
+ G.state='play';const tank=spawnUnit(1,'TANK'),van=spawnUnit(1,'VAN');
+ Object.assign(tank,{x:4100});Object.assign(van,{x:4000});assert.equal(commandMovement(van).move,false);
+ const line=ENEMY_X-70;Object.assign(tank,{x:line-500});Object.assign(van,{x:line-600});assert.equal(commandMovement(van).move,true);
+ assert.equal(canPass(van,tank),true);selectGroup('support');setOrder('hold');assert.equal(commandMovement(van).move,false);
+`));
+test('an AA truck keeps advancing while a helicopter loiters outside its firing range',()=>game()(`
+ G.state='play';G.bunkers=[];G.turrets=[];const aa=spawnUnit(-1,'AA');aa.aiReleased=true;aa.x=5000;
+ Object.assign(G.helis[0],{x:4000,y:GROUND-100});for(let i=0;i<60;i++)updateUnits(1/60);
+ assert.ok(aa.x<4990);assert.equal(G.missiles.length,0);
+`));
+test('held bunkers raise income and enemy income no longer grows with time',()=>game()(`
+ G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;let funds=G.funds;G.ecoT=2.99;update(.02);assert.equal(G.funds,funds+25);
+ G.bunkers[0].owner=1;G.bunkers[1].owner=1;funds=G.funds;G.ecoT=2.99;update(.02);assert.equal(G.funds,funds+35);assert.equal(incomeFor(1),35);
+ G.time=900;const enemy=G.eFunds;G.ecoT=2.99;update(.02);assert.equal(G.eFunds,enemy+DIFFICULTIES.normal.income+2*BUNKER_INCOME);
+ G.eFunds=5000;G.ecoT=2.99;update(.02);assert.equal(G.eFunds,ENEMY_BANK);
+`));
+test('destroying an enemy unit pays a bounty and losing your own does not',()=>game()(`
+ const funds=G.funds;killUnit(spawnUnit(-1,'TANK'));assert.equal(G.funds,funds+30);killUnit(spawnUnit(-1,'INF'));assert.equal(G.funds,funds+35);
+ killUnit(spawnUnit(1,'TANK'));assert.equal(G.funds,funds+35);
+`));
+test('a fresh helicopter survives two missile hits on Normal and carries four flares',()=>game()(`
+ const p=G.helis[0];assert.equal(p.flares,4);
+ for(let hit=0;hit<2;hit++){G.missiles.push(mkMissile(p.x+10,p.y,p,-1));updateProjectiles(.016);}
+ assert.equal(G.missiles.length,0);assert.equal(p.dead,false);assert.ok(p.hp>20&&p.hp<30);
+ Object.assign(p,{x:PLAYER_X,y:GROUND-22,flares:0});for(let i=0;i<300;i++)update(1/60);assert.equal(p.flares,4);
+`));
+test('three stars need a clean win inside a par that an escorted convoy can meet',()=>game()(`
+ G.state='win';G.time=400;assert.equal(sortieRating().stars,3);assert.ok(sortiePar()>=420);
+ G.time=sortiePar()+1;assert.equal(sortieRating().stars,2);G.time=400;G.stats.helisLost=1;assert.equal(sortieRating().stars,2);
+ G.state='over';assert.equal(sortieRating().stars,1);
+ startCampaign(0);G.state='win';G.time=60;assert.equal(sortieRating().stars,3);assert.equal(sortiePar(),MISSIONS[0].par);
+ startTutorial();G.state='win';G.time=5000;assert.equal(sortieRating().stars,3);
+`));
+test('simulation advances in fixed steps so game speed does not depend on the display rate',()=>game()(`
+ function run(hz){newGame();G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;for(let i=0;i<hz*2;i++)advance(1/hz);return {time:G.time,y:G.helis[0].y};}
+ const slow=run(30),normal=run(60),fast=run(120);
+ for(const r of [slow,normal,fast])assert.ok(Math.abs(r.time-2)<.02);
+ assert.ok(Math.abs(slow.y-normal.y)<.5&&Math.abs(fast.y-normal.y)<.5);
+ newGame();G.state='play';advance(.1);assert.ok(Math.abs(G.time-.1)<.01);
+ G.paused=true;const held=G.time;advance(.1);assert.equal(G.time,held);
+`));
+test('particles, shadows and night lights do not build gradients every frame',()=>game()(`
+ G.state='play';G.environment.night=true;let count=0;const radial=cx.createRadialGradient;cx.createRadialGradient=(...a)=>{count++;return radial(...a);};
+ render();const quiet=count;
+ for(let i=0;i<12;i++)spawnUnit(1,'TANK').x=200+i*70;for(let i=0;i<20;i++)explode(300+i*20,GROUND-60,78,0,1);
+ count=0;render();assert.ok(G.parts.length>300);assert.ok(count-quiet<=2,'extra gradients in a busy frame: '+(count-quiet));
+`));
+test('enemy, hit and wreck sprites are shaded from one base image instead of downloaded copies',()=>game()(`
+ assert.equal(ASSET_NEED,9);
+ const pixel=(side,effect)=>{const d=new Uint8ClampedArray([120,130,110,255,9,9,9,0]);shadePixels(d,side,effect);return d;};
+ const friend=pixel(1,''),enemy=pixel(-1,''),hit=pixel(1,'hit'),wreck=pixel(1,'wreck');
+ assert.ok(enemy[0]>enemy[1]+30&&enemy[0]>friend[0]);assert.equal(enemy[7],0);assert.deepEqual([...enemy.slice(4,7)],[9,9,9]);
+ assert.ok(hit[1]>friend[1]+60);assert.ok(wreck[0]===wreck[1]&&wreck[1]===wreck[2]&&wreck[0]<60);
+`));
+test('sustained slow frames lower render quality and fast frames do not raise it mid-sortie',()=>game()(`
+ const full=particleLimit();for(let i=0;i<300;i++)governQuality(.04);assert.ok(QUALITY.level>0);assert.ok(particleLimit()<full);
+ const level=QUALITY.level;for(let i=0;i<900;i++)governQuality(.016);assert.equal(QUALITY.level,level);
+ newGame();assert.equal(QUALITY.level,0);
+`));
+test('an incoming missile is reported and sounded until a flare decoys it',()=>game()(`
+ G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;const p=G.helis[0];assert.equal(incomingMissile(),null);
+ const m=mkMissile(p.x+700,p.y,p,-1);G.missiles.push(m);assert.equal(incomingMissile(),m);
+ let tones=0;SFX.lock=()=>tones++;update(.2);assert.ok(tones>=1);
+ m.target={x:p.x+50,y:p.y,life:1};assert.equal(incomingMissile(),null);G.missiles=[mkMissile(p.x+700,p.y,p,1)];assert.equal(incomingMissile(),null);
+`));
+test('desktop HUD panels sit below the ground lane',()=>game()(`
+ for(const panel of Object.values(HUD_BOTTOM))assert.ok(panel.y>=GROUND+12,'panel top '+panel.y);
+`));
+test('every main menu control sits inside the menu panel and an unavailable action is disabled',()=>game()(`
+ render();assert.ok(G.buttons.length>=10);
+ for(const b of G.buttons)assert.ok(b.x>=MENU_PANEL.x&&b.y>=MENU_PANEL.y&&b.x+b.w<=MENU_PANEL.x+MENU_PANEL.w&&b.y+b.h<=MENU_PANEL.y+MENU_PANEL.h,b.id+' is outside the panel');
+ const resume=G.buttons.find(b=>b.id==='resume');assert.equal(resume.disabled,true);
+ handleCanvasClick(resume.x+5,resume.y+5);assert.equal(G.state,'menu');
+`));
+test('Esc cancels a bomb preview first, otherwise pauses and resumes',()=>game()(`
+ G.state='play';onKey('Escape');assert.equal(G.paused,true);onKey('Escape');assert.equal(G.paused,false);
+ onKey('KeyB');assert.equal(G.bombAiming,true);onKey('Escape');assert.equal(G.bombAiming,false);assert.equal(G.paused,false);
+`));
+test('the pause screen can return to the main menu and open the controls reference',()=>game()(`
+ G.state='play';G.paused=true;render();const ids=G.buttons.map(b=>b.id);
+ for(const id of ['pause_resume','pause_restart','pause_menu','pause_controls','pause_audio','shake','formation'])assert.ok(ids.includes(id),id);
+ for(const a of G.buttons)for(const b of G.buttons)if(a!==b)assert.ok(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.h<=b.y||b.y+b.h<=a.y,a.id+' overlaps '+b.id);
+ G.buttons.find(b=>b.id==='pause_controls').onClick();render();assert.ok(G.buttons.some(b=>b.id==='controls_close'));onKey('Escape');render();assert.ok(G.buttons.some(b=>b.id==='pause_resume'));
+ G.buttons.find(b=>b.id==='pause_menu').onClick();assert.equal(G.state,'menu');assert.equal(G.paused,false);
+`));
+test('a gamepad flies, fires, bombs and pauses, and hands control back to the keyboard',()=>game()(`
+ G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;const p=G.helis[0];
+ const pad={connected:true,axes:[1,-1,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0}))};
+ const x=p.x,y=p.y;for(let i=0;i<30;i++){pollGamepad([pad]);update(1/60);}assert.ok(p.x>x+10&&p.y<y-10);assert.equal(PAD.active,true);
+ pad.axes=[0,0,0,0];pad.buttons[0].pressed=true;pollGamepad([pad]);update(1/60);assert.ok(G.bullets.length>0);pad.buttons[0].pressed=false;
+ pad.buttons[2].pressed=true;pollGamepad([pad]);assert.equal(G.bombAiming,true);pad.buttons[2].pressed=false;pollGamepad([pad]);assert.equal(G.bombs.length,1);
+ pad.buttons[9].pressed=true;pollGamepad([pad]);assert.equal(G.paused,true);pollGamepad([pad]);assert.equal(G.paused,true);
+ pad.buttons[9].pressed=false;pollGamepad([pad]);pad.buttons[9].pressed=true;pollGamepad([pad]);assert.equal(G.paused,false);
+ pollGamepad([]);assert.equal(PAD.x,0);assert.equal(PAD.fire,false);
+`));
+test('combat school teaches buying, refuelling, flaring a missile and passing a cable',()=>game()(`
+ startCombatSchool();const p=G.helis[0];assert.equal(G.tutorial.step,0);assert.ok(academyHint().startsWith('1/4'));
+ buy(1,'INF');updateTutorial();assert.equal(G.tutorial.step,1);assert.ok(p.fuel<LOW_FUEL);assert.ok(returnGuidance());
+ Object.assign(p,{x:PLAYER_X,y:GROUND-22,vx:0,vy:0});for(let i=0;i<900&&G.tutorial.step===1;i++)update(1/60);assert.equal(G.tutorial.step,2);
+ Object.assign(p,{x:420,y:260,vx:0,vy:0});for(let i=0;i<400&&!incomingMissile();i++){p.y=260;update(1/60);}assert.ok(incomingMissile());
+ onKey('KeyC');for(let i=0;i<300&&G.tutorial.step===2;i++){p.y=260;update(1/60);}assert.equal(G.tutorial.step,3);
+ const cable=G.bunkers[0];assert.equal(cable.owner,-1);assert.equal(cable.balloonDead,false);
+ Object.assign(p,{x:cable.x+220,y:150});updateTutorial();assert.equal(G.state,'win');
+`));
+test('lessons chain into the campaign and the menu points first-time and returning players differently',()=>{
+ game()(`
+  assert.equal(primarySortie().id,'training');startTutorial();endGame(true,'done');assert.ok(sortieLabel().includes('Flight academy'));
+  nextSortie();assert.equal(G.tutorial.advanced,true);assert.ok(!G.tutorial.combat);endGame(true,'done');
+  nextSortie();assert.equal(G.tutorial.combat,true);endGame(true,'done');assert.equal(readSaved().lessons,3);
+  nextSortie();assert.equal(G.campaign,0);assert.equal(readSaved().lastMode,'campaign');
+  newGame();assert.equal(primarySortie().id,'campaign');startQuickBattle();assert.equal(readSaved().lastMode,'quick');newGame();assert.equal(primarySortie().id,'quick');
+  onKey('Enter');assert.equal(G.state,'play');assert.equal(G.campaign,null);assert.equal(G.tutorial,null);
+ `);
+ game({stored:JSON.stringify({version:1,checkpoint:1,lastMode:'campaign',lessons:3})})(`
+  const next=primarySortie();assert.equal(next.id,'campaign');assert.ok(next.label.includes('2'));next.start();assert.equal(G.campaign,1);
+ `);
+ game({stored:JSON.stringify({version:1,checkpoint:null,lastMode:'hacked',lessons:99})})(`assert.equal(PROGRESS.lastMode,null);assert.equal(PROGRESS.lessons,3);`);
+});
+test('the page is installable: manifest, icons and metadata are linked',()=>{
+ const {existsSync}=require('node:fs');const html=readFileSync('index.html','utf8'),manifest=JSON.parse(readFileSync('manifest.webmanifest','utf8'));
+ assert.ok(html.includes('rel="manifest" href="manifest.webmanifest"'));assert.ok(html.includes('rel="icon"'));assert.ok(html.includes('apple-mobile-web-app-capable'));assert.ok(html.includes('name="description"'));
+ assert.equal(manifest.orientation,'landscape');assert.ok(['fullscreen','standalone'].includes(manifest.display));assert.ok(manifest.icons.length>=2);
+ for(const icon of manifest.icons)assert.ok(existsSync(icon.src),icon.src);
+});
+test('twenty seconds of battle advance and render in every environment without errors',()=>game()(`
+ for(const [night,weather] of [[false,'clear'],[true,'rain'],[false,'gusts']]){
+  SETTINGS.night=night;SETTINGS.weather=weather;startQuickBattle();for(const type of ['TANK','AA','INF'])buy(1,type);
+  for(const type of ['TANK','INF','INF','AA'])spawnUnit(-1,type).aiReleased=true;
+  for(let i=0;i<1200;i++){advance(1/60);if(i%6===0)render();}
+  assert.ok(G.time>19.9&&G.time<20.1);G.paused=true;render();OVERLAY='controls';render();OVERLAY='';G.paused=false;
+ }
+ SETTINGS.night=false;SETTINGS.weather='clear';
 `));

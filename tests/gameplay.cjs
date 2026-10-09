@@ -33,7 +33,7 @@ test('fuel burns in flight, refills at HQ, and engine-out prevents lift',()=>gam
 `));
 test('respawn restores fuel, flares and weapon readiness',()=>game()(`
  const p=G.helis[0];Object.assign(p,{dead:true,respawn:0,fuel:0,flares:0,cdMis:5});update(.016);
- assert.equal(p.dead,false);assert.equal(p.fuel,100);assert.equal(p.flares,3);assert.equal(p.cdMis,0);
+ assert.equal(p.dead,false);assert.equal(p.fuel,100);assert.equal(p.flares,FLARES);assert.equal(p.cdMis,0);
 `));
 test('radar holds scan and flight input resumes tracking',()=>game()(`
  G.state='play';handleCanvasClick(1100,40);const scan=G.camX;update(.1);
@@ -487,4 +487,53 @@ test('an AA truck keeps advancing while a helicopter loiters outside its firing 
  G.state='play';G.bunkers=[];G.turrets=[];const aa=spawnUnit(-1,'AA');aa.aiReleased=true;aa.x=5000;
  Object.assign(G.helis[0],{x:4000,y:GROUND-100});for(let i=0;i<60;i++)updateUnits(1/60);
  assert.ok(aa.x<4990);assert.equal(G.missiles.length,0);
+`));
+test('held bunkers raise income and enemy income no longer grows with time',()=>game()(`
+ G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;let funds=G.funds;G.ecoT=2.99;update(.02);assert.equal(G.funds,funds+25);
+ G.bunkers[0].owner=1;G.bunkers[1].owner=1;funds=G.funds;G.ecoT=2.99;update(.02);assert.equal(G.funds,funds+35);assert.equal(incomeFor(1),35);
+ G.time=900;const enemy=G.eFunds;G.ecoT=2.99;update(.02);assert.equal(G.eFunds,enemy+DIFFICULTIES.normal.income+2*BUNKER_INCOME);
+ G.eFunds=5000;G.ecoT=2.99;update(.02);assert.equal(G.eFunds,ENEMY_BANK);
+`));
+test('destroying an enemy unit pays a bounty and losing your own does not',()=>game()(`
+ const funds=G.funds;killUnit(spawnUnit(-1,'TANK'));assert.equal(G.funds,funds+30);killUnit(spawnUnit(-1,'INF'));assert.equal(G.funds,funds+35);
+ killUnit(spawnUnit(1,'TANK'));assert.equal(G.funds,funds+35);
+`));
+test('a fresh helicopter survives two missile hits on Normal and carries four flares',()=>game()(`
+ const p=G.helis[0];assert.equal(p.flares,4);
+ for(let hit=0;hit<2;hit++){G.missiles.push(mkMissile(p.x+10,p.y,p,-1));updateProjectiles(.016);}
+ assert.equal(G.missiles.length,0);assert.equal(p.dead,false);assert.ok(p.hp>20&&p.hp<30);
+ Object.assign(p,{x:PLAYER_X,y:GROUND-22,flares:0});for(let i=0;i<300;i++)update(1/60);assert.equal(p.flares,4);
+`));
+test('three stars need a clean win inside a par that an escorted convoy can meet',()=>game()(`
+ G.state='win';G.time=400;assert.equal(sortieRating().stars,3);assert.ok(sortiePar()>=420);
+ G.time=sortiePar()+1;assert.equal(sortieRating().stars,2);G.time=400;G.stats.helisLost=1;assert.equal(sortieRating().stars,2);
+ G.state='over';assert.equal(sortieRating().stars,1);
+ startCampaign(0);G.state='win';G.time=60;assert.equal(sortieRating().stars,3);assert.equal(sortiePar(),MISSIONS[0].par);
+ startTutorial();G.state='win';G.time=5000;assert.equal(sortieRating().stars,3);
+`));
+test('simulation advances in fixed steps so game speed does not depend on the display rate',()=>game()(`
+ function run(hz){newGame();G.state='play';G.helis[1].dead=true;G.helis[1].respawn=1e9;for(let i=0;i<hz*2;i++)advance(1/hz);return {time:G.time,y:G.helis[0].y};}
+ const slow=run(30),normal=run(60),fast=run(120);
+ for(const r of [slow,normal,fast])assert.ok(Math.abs(r.time-2)<.02);
+ assert.ok(Math.abs(slow.y-normal.y)<.5&&Math.abs(fast.y-normal.y)<.5);
+ newGame();G.state='play';advance(.1);assert.ok(Math.abs(G.time-.1)<.01);
+ G.paused=true;const held=G.time;advance(.1);assert.equal(G.time,held);
+`));
+test('particles, shadows and night lights do not build gradients every frame',()=>game()(`
+ G.state='play';G.environment.night=true;let count=0;const radial=cx.createRadialGradient;cx.createRadialGradient=(...a)=>{count++;return radial(...a);};
+ render();const quiet=count;
+ for(let i=0;i<12;i++)spawnUnit(1,'TANK').x=200+i*70;for(let i=0;i<20;i++)explode(300+i*20,GROUND-60,78,0,1);
+ count=0;render();assert.ok(G.parts.length>300);assert.ok(count-quiet<=2,'extra gradients in a busy frame: '+(count-quiet));
+`));
+test('enemy, hit and wreck sprites are shaded from one base image instead of downloaded copies',()=>game()(`
+ assert.equal(ASSET_NEED,9);
+ const pixel=(side,effect)=>{const d=new Uint8ClampedArray([120,130,110,255,9,9,9,0]);shadePixels(d,side,effect);return d;};
+ const friend=pixel(1,''),enemy=pixel(-1,''),hit=pixel(1,'hit'),wreck=pixel(1,'wreck');
+ assert.ok(enemy[0]>enemy[1]+30&&enemy[0]>friend[0]);assert.equal(enemy[7],0);assert.deepEqual([...enemy.slice(4,7)],[9,9,9]);
+ assert.ok(hit[1]>friend[1]+60);assert.ok(wreck[0]===wreck[1]&&wreck[1]===wreck[2]&&wreck[0]<60);
+`));
+test('sustained slow frames lower render quality and fast frames do not raise it mid-sortie',()=>game()(`
+ const full=particleLimit();for(let i=0;i<300;i++)governQuality(.04);assert.ok(QUALITY.level>0);assert.ok(particleLimit()<full);
+ const level=QUALITY.level;for(let i=0;i<900;i++)governQuality(.016);assert.equal(QUALITY.level,level);
+ newGame();assert.equal(QUALITY.level,0);
 `));

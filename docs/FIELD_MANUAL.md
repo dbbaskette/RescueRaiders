@@ -14,7 +14,7 @@ Your helicopter supports the convoy with guns, bombs, missiles and troop transpo
 - **Space / FIRE:** hold to fire. The small gun-direction mark and four pips ahead of the helicopter show weapon readiness.
 - **Hold B / BOMB:** show the trajectory and estimated time to ground; release to drop once. Esc, dragging off the touch button, pausing or losing focus cancels the preview.
 - **M / MISSILE:** launch at the selected aircraft or ground target. Brackets appear while engaging, rather than cluttering ordinary flight.
-- **C / FLARE:** launch decoys that can divert incoming missiles.
+- **C / FLARE:** launch decoys that can divert incoming missiles. The helicopter carries four, restocked at HQ. A missile that connects costs about 38 hull on Normal (27 on Recruit, 46 on Veteran), so a fresh aircraft survives two.
 - **P / pause button:** pause. Leaving the page, losing focus or rotating a phone to portrait also pauses. Resume explicitly.
 - **Click or tap radar:** inspect a sector for 2.5 seconds; flight input restores camera tracking.
 
@@ -41,6 +41,8 @@ Parachutists inherit horizontal aircraft motion, fall for 0.25 seconds before de
 | 3 | AA truck | $160 | Protect against aircraft / Support |
 | 4 | Demo Van | $250 | Reach enemy HQ; one active per side / Support |
 | 5 | Engineer | $40 | Capture turrets and repair defenses / Infantry |
+
+**Funds:** you earn $25 every three seconds plus $5 for each bunker you hold, and every enemy unit destroyed pays a bounty of a quarter of its cost ($5 infantry, $10 engineer, $30 tank, $40 AA truck, $65 Van). The enemy earns its difficulty income plus $5 per bunker it holds and can bank at most $800, so taking territory starves its armor.
 
 Desktop: select a group with **Tab** or the four group buttons, then **Z Advance**, **X Hold** or **V Rally**. Mobile: open **Command**, select the group and order. Command pauses the battle while you decide. On a smaller phone, swipe vertically—even over buttons—to reach the rest of the panel. Opening a different menu restores its heading; remaining in that menu preserves your scroll position.
 
@@ -112,13 +114,15 @@ Difficulty, sound, camera shake and environment preferences also persist. Storag
 | Normal | $300 | 100% | 4 seconds | 70 seconds |
 | Veteran | $220 | 120% | 3 seconds | 50 seconds |
 
-Enemy income also scales. Hard-landing and fuel-exhaustion losses do not receive attack-damage scaling.
+Enemy base income is $18, $22 or $27 every three seconds, before bunkers. Hard-landing and fuel-exhaustion losses do not receive attack-damage scaling.
+
+As a baseline, an HQ left completely undefended falls to the enemy Van after about 7:00 on Recruit, 5:40 on Normal and 5:35 on Veteran. `node tools/balance.cjs` replays that check, and a ground-only stalemate check, after tuning changes.
 
 **Training** / menu **T** covers flight, bombs, pickup and capture. **Flight Academy** / menu **Y** covers boarding mixed cargo, selecting an engineer for a parachute insertion, capturing and repairing a turret, and holding/rallying armor. Both provide the troops needed, disable enemy deployments and restart if the helicopter is lost. Use the aircraft to recover/reposition an engineer who lands away from the target turret.
 
 ## Debrief and replay
 
-The debrief reports rescued troops/pilots, captured bases, convoy losses and the last aircraft-loss cause. **Watch final moments** / **R** plays a bounded history of up to 64 visual snapshots, sampled roughly eight times per second.
+The debrief reports rescued troops/pilots, captured bases, convoy losses and the last aircraft-loss cause. A win earns two stars; three stars need a win with no helicopter lost inside the par time (12:00 for Quick Battle and Breakthrough, 2:30 for Foothold, 4:00 for Bring them home). Training has no par. **Watch final moments** / **R** plays a bounded history of up to 64 visual snapshots, sampled roughly eight times per second.
 
 Playback interpolates between snapshots using stable entity identities. It follows a finishing Van, recent ordnance or the helicopter; **F / camera button** switches to the original view. **Space / speed button** changes between normal speed and 0.35× slow motion. **Esc / Back to debrief** exits. Replay is silent and never resumes, damages or awards points to the live battle. It is a visual recording, not a deterministic re-simulation.
 

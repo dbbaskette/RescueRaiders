@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Chroma-key magenta backgrounds -> clean transparent game sprites + red enemy variants."""
+"""Chroma-key magenta backgrounds -> clean transparent game sprites.
+
+Enemy red tint, hit flash and wreck shading are computed in the browser from these base images
+(shadePixels in index.html), so no tinted copies are written. The large HQ sprite ships as WebP.
+"""
 from PIL import Image
 import os
 
@@ -16,7 +20,7 @@ SPRITES = {
     'bunker':  ('src_bunker.png',  220),
     'hq':      ('src_hq.png',      600),
 }
-REDWASH = {'heli','tank','aa','van','soldier','hq','balloon','bunker'}
+WEBP = {'hq'}
 
 def key_and_crop(src_file):
     im = Image.open(src_file).convert('RGBA')
@@ -49,29 +53,15 @@ def key_and_crop(src_file):
         im = im.crop(bbox)
     return im
 
-def redwash(im):
-    im = im.copy()
-    px = im.load()
-    for y in range(im.height):
-        for x in range(im.width):
-            r, g, b, a = px[x, y]
-            if a == 0:
-                continue
-            nr = min(255, int(r * 1.3 + 15))
-            ng = int(g * 0.55)
-            nb = int(b * 0.55)
-            px[x, y] = (nr, ng, nb, a)
-    return im
-
 for name, (src, tw) in SPRITES.items():
     im = key_and_crop(src)
     th = max(1, round(im.height * tw / im.width))
     im = im.resize((tw, th), Image.LANCZOS)
-    im.save(f'{name}.png', optimize=True)
-    print(f'{name}.png {im.size} (alpha bbox: {im.getchannel("A").getbbox()})')
-    if name in REDWASH:
-        redwash(im).save(f'{name}_r.png', optimize=True)
-        print(f'{name}_r.png')
+    if name in WEBP:
+        im.save(f'{name}.webp', quality=90, method=6)
+    else:
+        im.save(f'{name}.png', optimize=True)
+    print(f'{name} {im.size} (alpha bbox: {im.getchannel("A").getbbox()})')
 
 # backdrop: downscale + slight darken for mood
 bd = Image.open('src_backdrop.png').convert('RGB')

@@ -177,7 +177,7 @@ function drawNight(){
   }
   // Local light pools keep near-field hazards visible without illuminating the entire map.
   cx.globalCompositeOperation='screen';
-  function light(x,y,r,color){const glow=cx.createRadialGradient(x,y,1,x,y,r);glow.addColorStop(0,color);glow.addColorStop(1,'rgba(120,160,175,0)');cx.fillStyle=glow;cx.fillRect(x-r,y-r,r*2,r*2);}
+  function light(x,y,r,color){drawGlow('light',color,x,y,r);}
   for(const h of G.helis){
     if(h.dead||!onScreen(h.x))continue;const x=h.x-G.camX,tx=x+h.dir*100;
     cx.fillStyle='rgba(171,204,201,.055)';cx.beginPath();cx.moveTo(x+h.dir*24,h.y+6);cx.lineTo(tx+125,GROUND);cx.lineTo(tx-125,GROUND);cx.closePath();cx.fill();light(tx,GROUND,155,'rgba(179,203,183,.23)');
@@ -188,7 +188,11 @@ function drawNight(){
   for(const t of G.turrets){if(t.hp<=0||!onScreen(t.x))continue;const x=t.x-G.camX,angle=-Math.PI/2+Math.sin(G.time*.45+t.x)*.8;
     cx.fillStyle='rgba(187,203,196,.045)';cx.beginPath();cx.moveTo(x,GROUND-22);cx.lineTo(x+Math.cos(angle-.16)*400,GROUND-22+Math.sin(angle-.16)*400);cx.lineTo(x+Math.cos(angle+.16)*400,GROUND-22+Math.sin(angle+.16)*400);cx.closePath();cx.fill();}
   for(const u of G.units)if(u.fireFlash>0)light(u.x-G.camX,GROUND-18,60,'rgba(255,179,95,.4)');
-  for(const part of G.parts)if(part.add&&onScreen(part.x))light(part.x-G.camX,part.y,Math.min(80,(part.s||4)*5),'rgba(239,158,82,.13)');
+  // Pools from every spark overlap almost completely, and fill area is what a frame costs: the newest embers are enough.
+  for(let i=G.parts.length-1,pools=0;i>=0&&pools<40;i--){
+    const part=G.parts[i];if(!part.add||part.streak||!onScreen(part.x))continue;
+    pools++;light(part.x-G.camX,part.y,Math.min(80,(part.s||4)*5),'rgba(239,158,82,.13)');
+  }
   cx.restore();
 }
 function drawOperationsUI(){

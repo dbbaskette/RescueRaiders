@@ -1,11 +1,19 @@
 'use strict';
 // Shared mission, transport, command and presentation behavior for both interfaces.
 const MISSIONS=[
-  {name:'Foothold',brief:'Capture the marked bunker.',kind:'capture',bunkers:[1500,3300],turrets:[1100,2700]},
-  {name:'Bring them home',brief:'Recover four stranded troops and return them to HQ.',kind:'rescue',bunkers:[1300,3600,6000],turrets:[1750,3100,5200]},
-  {name:'Breakthrough',brief:'Escort your Van to enemy HQ.',kind:'escort',bunkers:[1900,3700,5500,7200],turrets:[1400,2900,4600,6300,7800]}
+  {name:'Foothold',brief:'Capture the marked bunker.',kind:'capture',par:150,bunkers:[1500,3300],turrets:[1100,2700]},
+  {name:'Bring them home',brief:'Recover four stranded troops and return them to HQ.',kind:'rescue',par:240,bunkers:[1300,3600,6000],turrets:[1750,3100,5200]},
+  {name:'Breakthrough',brief:'Escort your Van to enemy HQ.',kind:'escort',par:720,bunkers:[1900,3700,5500,7200],turrets:[1400,2900,4600,6300,7800]}
 ];
 SETTINGS.shake=1;
+// Three stars need a win with no helicopter lost inside the par; an escorted convoy needs about five minutes to cross the map.
+const QUICK_PAR=720;
+function sortiePar(){return G.tutorial?null:G.campaign===null?QUICK_PAR:MISSIONS[G.campaign].par;}
+function sortieRating(){
+  if(G.state!=='win')return {stars:1,rank:'HONORABLE SERVICE SPECIALIST'};
+  const par=sortiePar();
+  return G.stats.helisLost===0&&(par===null||G.time<=par)?{stars:3,rank:'ACE FLIGHT COMMANDER'}:{stars:2,rank:'VETERAN SQUADRON LEADER'};
+}
 function initExperience(g){
   g.orders={mode:'advance',x:0};g.campaign=null;g.selectedCargo=0;g.casualties=[];
   g.replayFrames=[];g.replayClock=0;g.replay=null;g.cameraLead=0;

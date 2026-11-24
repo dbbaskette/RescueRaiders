@@ -216,34 +216,80 @@ function drawWeather(){
   for(let i=Math.floor(G.camX/110);i<(G.camX+W)/110;i++){
     const x=i*110+hash(i+77)*45-G.camX;
     cx.fillStyle='rgba(168,191,187,.18)';cx.beginPath();cx.ellipse(x,GROUND+4+hash(i)*20,12+hash(i+6)*24,1.3,0,0,7);cx.fill();
-  }cx.restore();
+    const phase=(G.time*2.2+hash(i+42))%1;
+    drawRipple(x,GROUND+4+hash(i)*20,phase);
+  }
+  for(const h of G.helis)if(!h.dead&&enginePowered(h)&&h.y>GROUND-100&&onScreen(h.x)){
+    const reach=1-(GROUND-h.y)/100;
+    for(const dir of [-1,1]){
+      cx.globalAlpha=reach*.35;
+      drawGlow('light','#cddada',h.x-G.camX+dir*(28+reach*28),GROUND-4,38,5+reach*7);
+    }
+  }
+  cx.restore();
+  function drawRipple(x,y,phase){
+    cx.strokeStyle='rgba(199,216,217,'+((1-phase)*.45)+')';
+    cx.beginPath();cx.ellipse(x,y,1+phase*16,1+phase*1.8,0,0,7);cx.stroke();
+  }
+}
+let nightSurfaces;
+function nightLighting(){
+  if(nightSurfaces)return nightSurfaces;
+  if(typeof document.createElement!=='function')return null;
+  const mask=document.createElement('canvas');mask.width=W/2;mask.height=H/2;
+  const c=mask.getContext('2d');c.scale(.5,.5);
+  const ambient=c.createLinearGradient(0,0,0,H);
+  ambient.addColorStop(0,'rgba(5,12,30,.93)');ambient.addColorStop(.6,'rgba(8,18,36,.83)');ambient.addColorStop(1,'rgba(7,16,26,.73)');
+  const beam=document.createElement('canvas');beam.width=64;beam.height=128;
+  const beamCtx=beam.getContext('2d'),pixels=beamCtx.createImageData(64,128);
+  for(let y=0;y<128;y++)for(let x=0;x<64;x++){
+    const depth=(y+1)/128,across=(x-31.5)/(2+29*depth);
+    pixels.data[(y*64+x)*4+3]=145*Math.exp(-across*across*3.5)*(1-depth*.55)*Math.min(1,(1-depth)*12);
+  }
+  beamCtx.putImageData(pixels,0,0);
+  return nightSurfaces={mask,c,ambient,beam};
 }
 function drawNight(){
   if(!G.environment?.night)return;
-  cx.save();
-  const darkness=sceneGradient('night');
-  cx.fillStyle=darkness;cx.fillRect(-24,-24,W+48,H+48);
-  if(G.environment.weather!=='rain'){
-    cx.fillStyle='rgba(192,213,222,.48)';for(let i=0;i<32;i++)cx.fillRect(hash(i+411)*W,110+hash(i+731)*115,1,1);
+  const lighting=nightLighting();
+  if(!lighting){cx.fillStyle=sceneGradient('night');cx.fillRect(-24,-24,W+48,H+48);return;}
+  const {mask,c,ambient,beam}=lighting;
+  c.globalCompositeOperation='copy';c.fillStyle=ambient;c.fillRect(0,0,W,H);
+  c.globalCompositeOperation='destination-out';
+  const pool=glowSprite('light','#fff');
+  function light(x,y,rx,ry,strength){
+    c.globalAlpha=strength;c.drawImage(pool,x-rx,y-ry,rx*2,ry*2);
   }
-  // Local light pools keep near-field hazards visible without illuminating the entire map.
-  cx.globalCompositeOperation='screen';
-  function light(x,y,r,color){drawGlow('light',color,x,y,r);}
-  for(const h of G.helis){
-    if(h.dead||!onScreen(h.x))continue;const x=h.x-G.camX,tx=x+h.dir*100;
-    cx.fillStyle='rgba(171,204,201,.055)';cx.beginPath();cx.moveTo(x+h.dir*24,h.y+6);cx.lineTo(tx+125,GROUND);cx.lineTo(tx-125,GROUND);cx.closePath();cx.fill();light(tx,GROUND,155,'rgba(179,203,183,.23)');
-    light(x-h.dir*42,h.y+3,10,h.side===1?'rgba(95,240,169,.55)':'rgba(255,100,70,.55)');
+  function cone(x,y,dx,dy,width){
+    c.save();c.globalAlpha=.92;c.translate(x,y);c.rotate(Math.atan2(-dx,dy));
+    c.drawImage(beam,-width/2,0,width,Math.hypot(dx,dy));c.restore();
   }
-  const pads=[PLAYER_X,ENEMY_X,...G.bunkers.filter(b=>b.owner===1).map(forwardPadX)];
-  for(const wx of pads){const x=wx-G.camX;if(x<-180||x>W+180)continue;light(x,GROUND,95,'rgba(178,197,144,.20)');for(const dx of [-45,-30,30,45]){cx.fillStyle='#bbdbb2';cx.fillRect(x+dx,GROUND-3,3,2);}}
-  for(const t of G.turrets){if(t.hp<=0||!onScreen(t.x))continue;const x=t.x-G.camX,angle=-Math.PI/2+Math.sin(G.time*.45+t.x)*.8;
-    cx.fillStyle='rgba(187,203,196,.045)';cx.beginPath();cx.moveTo(x,GROUND-22);cx.lineTo(x+Math.cos(angle-.16)*400,GROUND-22+Math.sin(angle-.16)*400);cx.lineTo(x+Math.cos(angle+.16)*400,GROUND-22+Math.sin(angle+.16)*400);cx.closePath();cx.fill();}
-  for(const u of G.units)if(u.fireFlash>0)light(u.x-G.camX,GROUND-18,60,'rgba(255,179,95,.4)');
-  // Pools from every spark overlap almost completely, and fill area is what a frame costs: the newest embers are enough.
-  for(let i=G.parts.length-1,pools=0;i>=0&&pools<40;i--){
+  for(const h of G.helis)if(!h.dead&&onScreen(h.x)){
+    const x=h.x-G.camX+h.dir*29,y=h.y+8,dy=Math.max(7,GROUND-y),dx=h.dir*dy*.42;
+    cone(x,y,dx,dy,dy*.66);light(x+dx,GROUND,dy*.36+20,19,.74);
+  }
+  for(const t of G.turrets)if(t.hp>0&&onScreen(t.x)){
+    const angle=-1.57+Math.sin(G.time*.45+t.x)*.8;
+    cone(t.x-G.camX,GROUND-24,Math.cos(angle)*320,Math.sin(angle)*320,105);
+  }
+  function pad(wx){if(onScreen(wx))light(wx-G.camX,GROUND-8,96,55,.9);}
+  pad(PLAYER_X+137);pad(ENEMY_X+137);
+  for(const b of G.bunkers)if(b.owner===1)pad(forwardPadX(b));
+  for(const u of G.units)if(u.fireFlash>0&&onScreen(u.x))light(u.x-G.camX,GROUND-18,60,45,.8);
+  for(let i=G.parts.length-1,pools=0;i>=0&&pools<32;i--){
     const part=G.parts[i];if(!part.add||part.streak||!onScreen(part.x))continue;
-    pools++;light(part.x-G.camX,part.y,Math.min(80,(part.s||4)*5),'rgba(239,158,82,.13)');
+    const r=Math.min(95,(part.s||4)*4);light(part.x-G.camX,part.y,r,r,.7);pools++;
   }
+  c.globalAlpha=1;cx.drawImage(mask,-1,-1,W+2,H+2);
+  cx.save();cx.globalCompositeOperation='lighter';
+  for(const h of G.helis)if(!h.dead&&onScreen(h.x)){
+    cx.save();cx.translate(h.x-G.camX,h.y+(h.settle||0)*2);cx.rotate(h.pitch||0);
+    drawGlow('light',h.side===1?'#56cf99':'#fd7354',-h.dir*42,3,6);cx.restore();
+  }
+  for(const wx of [PLAYER_X,ENEMY_X])if(onScreen(wx)){
+    for(let i=-2;i<=2;i++)drawGlow('light','rgba(255,187,112,.32)',wx-G.camX+i*54,GROUND-94,9,13);
+  }
+  for(const p of G.parts)if(p.bounce&&onScreen(p.x))drawGlow('muzzle','',p.x-G.camX,p.y,p.s);
   cx.restore();
 }
 function drawOperationsUI(){

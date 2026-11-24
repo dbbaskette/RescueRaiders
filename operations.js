@@ -254,7 +254,7 @@ function drawOperationsUI(){
       for(const [i,group] of ['all','infantry','armor','support'].entries())experienceButton('group_'+group,group==='all'?'All [Tab]':group[0].toUpperCase()+group.slice(1),424+i*109,70,102,()=>selectGroup(group),G.group===group);
     }
     const nav=returnGuidance();
-    if(nav){cx.font='11px '+FONT;cx.textAlign='left';cx.fillStyle=nav.warning?'#f3c38a':'#aebdac';cx.fillStyle='rgba(10,23,29,.85)';cx.fillRect(15,137,370,23);cx.fillStyle=nav.warning?'#f3c38a':'#becbb8';cx.fillText(nav.label,24,152);}
+    if(nav){cx.font='11px '+FONT;cx.textAlign='left';cx.fillStyle='rgba(10,23,29,.85)';cx.fillRect(15,137,370,23);cx.fillStyle=nav.warning?'#f3c38a':'#becbb8';cx.fillText(nav.label,24,152);}
     if(G.radio){cx.font='10px '+FONT;cx.textAlign='center';cx.fillStyle='#d5caaa';cx.fillText(G.radio.text,W/2,113);}
     if(canBailout())experienceButton('bailout','Bail out [J]',20,166,130,bailout);
   }

@@ -611,3 +611,10 @@ test('twenty seconds of battle advance and render in every environment without e
  }
  SETTINGS.night=false;SETTINGS.weather='clear';
 `));
+test('canvas pointer follows active menu controls and the live radar',()=>game()(`
+ render();const start=G.buttons.find(b=>b.id==='start_btn');
+ mouse.x=start.x+1;mouse.y=start.y+1;render();assert.equal(cv.style.cursor,'pointer');
+ const disabled=G.buttons.find(b=>b.disabled);mouse.x=disabled.x+1;mouse.y=disabled.y+1;render();assert.equal(cv.style.cursor,'default');
+ G.state='play';mouse.x=RADAR_BOUNDS.x+1;mouse.y=RADAR_BOUNDS.y+1;render();assert.equal(cv.style.cursor,'pointer');
+ G.paused=true;render();assert.equal(cv.style.cursor,'default');
+`));

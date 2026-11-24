@@ -73,7 +73,7 @@ const SPR={},UNIT_SPR={ENG:'soldier',INF:'soldier',TANK:'tank',AA:'aa',VAN:'van'
 const UNIT_SCALE={ENG:1.4,INF:1.4,TANK:1.15,AA:1.15,VAN:1.15},TEAM_RIM={1:'#8fe8d2','-1':'#ff7a66'};
 const SPR_CFG={
   heli:{w:130,face:-1},tank:{w:95,face:1},aa:{w:110,face:-1},van:{w:100,face:1},
-  soldier:{w:30,face:1},balloon:{w:120,face:1},bunker:{w:110,face:1},hq:{w:300,face:1,file:'hq.webp'}
+  soldier:{w:30,face:1},balloon:{w:120,face:1},bunker:{w:110,face:1},hq:{w:300,face:1}
 };
 let ASSETS_OK=false,ASSET_FAIL=[],ASSET_GOT=0,ASSET_NEED=0;
 (function loadAssets(){
@@ -83,21 +83,29 @@ let ASSETS_OK=false,ASSET_FAIL=[],ASSET_GOT=0,ASSET_NEED=0;
     img.onload=done;img.onerror=()=>{ASSET_FAIL.push(name);done();};
     img.src='assets/'+file;return img;
   };
-  for(const n in SPR_CFG)SPR[n]={img:load(n,SPR_CFG[n].file||n+'.png')};
+  for(const n in SPR_CFG)SPR[n]={img:load(n,n+'.webp')};
   SPR.backdrop=load('backdrop','backdrop.jpg');
 })();
 function sprImg(name){
   const s=SPR[name];
   return s&&s.img&&s.img.complete&&s.img.naturalWidth>0?s.img:null;
 }
-// Enemy red wash, team desaturation, hit flash and wreck char are computed per pixel from the one base
+// Faction paint, team desaturation, hit flash and wreck char are computed per pixel from the one base
 // image and cached, so sprites need no pre-tinted copies and nothing depends on canvas filter support.
-function shadePixels(d,side,effect){
-  const sat=side<0?.62:.78,gain=(side<0?.92:.98)*(effect==='hit'?2.4:1);
+function shadePixels(d,side,effect,width=1){
+  const sat=.83,gain=effect==='hit'?2.4:1;
   for(let i=0;i<d.length;i+=4){
     if(!d[i+3])continue;
     let r=d[i],g=d[i+1],b=d[i+2];
-    if(side<0){r=Math.min(255,r*1.3+15);g*=.55;b*=.55;}
+    const y=Math.floor(i/4/width),x=i/4%width;
+    const stripe=(x+y*.48)/width;
+    const marking=(stripe>.42&&stripe<.49)||(stripe>.505&&stripe<.528);
+    if(side<0){
+      const value=.27*r+.58*g+.15*b;
+      if(marking || (b>r*1.4&&b>g*1.15)){
+        r=value*.86+92;g=value*.36;b=value*.29;
+      }else{r=value*.77;g=value*.84;b=value*.91;}
+    }else if(marking){r*=.64;g=g*.86+12;b=b*.92+32;}
     const gray=.2126*r+.7152*g+.0722*b;
     if(effect==='wreck')r=g=b=gray*.35;
     else{r=(gray+(r-gray)*sat)*gain;g=(gray+(g-gray)*sat)*gain;b=(gray+(b-gray)*sat)*gain;}
@@ -113,11 +121,11 @@ function materialSprite(img,name,side,w,effect='',rim=''){
   const sw=Math.min(img.width,Math.ceil(w*3)),sh=Math.max(1,Math.round(sw*img.height/img.width));
   const body=document.createElement('canvas');body.width=sw;body.height=sh;
   const ctx=body.getContext('2d');ctx.drawImage(img,0,0,sw,sh);
-  try{const pixels=ctx.getImageData(0,0,sw,sh);shadePixels(pixels.data,side,effect);ctx.putImageData(pixels,0,0);}
+  try{const pixels=ctx.getImageData(0,0,sw,sh);shadePixels(pixels.data,side,effect,sw);ctx.putImageData(pixels,0,0);}
   catch(e){
     // Pixel access is refused when the page is opened straight from disk; approximate with compositing.
     ctx.globalCompositeOperation='source-atop';
-    for(const [on,tint] of [[side<0,'rgba(190,40,30,.42)'],[effect==='hit','rgba(255,255,255,.6)'],[effect==='wreck','rgba(18,18,16,.72)']])
+    for(const [on,tint] of [[side<0,'rgba(66,75,85,.34)'],[effect==='hit','rgba(255,255,255,.6)'],[effect==='wreck','rgba(18,18,16,.72)']])
       if(on){ctx.fillStyle=tint;ctx.fillRect(0,0,sw,sh);}
   }
   let surface=body,pad=0;

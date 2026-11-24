@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Chroma-key magenta backgrounds -> clean transparent game sprites.
-
-Enemy red tint, hit flash and wreck shading are computed in the browser from these base images
-(shadePixels in index.html), so no tinted copies are written. The large HQ sprite ships as WebP.
+"""Run python3 assets/process.py with Pillow to rebuild sprites, backdrop and icons.
+src_ files are authoring masters. The runtime downloads the eight WebP sprites
+and backdrop.jpg. Team paint, hit flashes and wreck shading use these same sprites.
 """
-from PIL import Image
+from PIL import Image, ImageDraw
 import os
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -20,49 +19,52 @@ SPRITES = {
     'bunker':  ('src_bunker.png',  220),
     'hq':      ('src_hq.png',      600),
 }
-WEBP = {'hq'}
 
 def key_and_crop(src_file):
     im = Image.open(src_file).convert('RGBA')
-    w, h = im.size
+    if src_file == 'src_van.png':
+        return im.crop(im.getbbox())
     px = im.load()
-
-    # Sample background magenta from image corners
-    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    bg_m = min(min(p[0], p[2]) - p[1] for p in corners)
-    cut_hi = min(80, max(50, bg_m - 15))
-    cut_lo = cut_hi - 30
-
-    for y in range(h):
-        for x in range(w):
+    for y in range(im.height):
+        for x in range(im.width):
             r, g, b, a = px[x, y]
-            m = min(r, b) - g
-            if m >= cut_hi:
+            spill = min(r, b) - g
+            if spill >= 80:
                 px[x, y] = (0, 0, 0, 0)
-            elif m > cut_lo:
-                na = int(255 * (1 - (m - cut_lo) / (cut_hi - cut_lo)))
-                ng = max(g, (r + b) // 2 - m)
-                px[x, y] = (r, ng, b, na)
-            elif m > 10:
-                ng = max(g, (r + b) // 2 - int(m * 1.3))
-                px[x, y] = (r, ng, b, a)
+            elif spill > 0:
+                # Neutralize the key colour even on partially covered edge pixels.
+                coverage = min(1, (80 - spill) / 30)
+                px[x, y] = (r - spill, g, b - spill, round(a * coverage))
+    return im.crop(im.getbbox())
 
-    # Tight autocrop to actual object pixels
-    bbox = im.getchannel('A').getbbox()
-    if bbox:
-        im = im.crop(bbox)
-    return im
+
+def finish_details(im, name):
+    # Coordinates refer to the fixed export sizes in SPRITES. Keep the heli
+    # canvas extent so the animated rotor mast has a stable registration point.
+    draw = ImageDraw.Draw(im)
+    if name == 'heli':
+        for box in [(0, 0, 96, 16), (124, 0, 224, 16), (0, 0, 224, 4)]:
+            draw.rectangle(box, fill=(0, 0, 0, 0))
+        # Cool reflections in the two inset canopy panes.
+        for pane in [[(43,39),(57,33),(55,40),(45,44)], [(70,32),(84,27),(80,36),(69,39)]]:
+            draw.polygon(pane, fill=(55,75,82,232))
+            draw.line(pane[:2], fill=(133,157,157,245))
+    elif name == 'aa':
+        for pane in [[(28,60),(38,59),(37,67),(26,69)], [(59,59),(69,58),(66,65),(57,67)]]:
+            draw.polygon(pane, fill=(60,78,83,235))
+    elif name == 'hq':
+        for x in (76, 502):
+            draw.rectangle((x, 22, x+19, 27), fill=(0,0,0,0))
+
 
 def sprites():
     for name, (src, tw) in SPRITES.items():
         im = key_and_crop(src)
         th = max(1, round(im.height * tw / im.width))
-        im = im.resize((tw, th), Image.LANCZOS)
-        if name in WEBP:
-            im.save(f'{name}.webp', quality=90, method=6)
-        else:
-            im.save(f'{name}.png', optimize=True)
-        print(f'{name} {im.size} (alpha bbox: {im.getchannel("A").getbbox()})')
+        im = im.resize((tw, th), Image.Resampling.LANCZOS)
+        finish_details(im, name)
+        im.save(f'{name}.webp', quality=89, method=6)
+        print(f'{name}.webp {im.size}')
 
     # backdrop: downscale + slight darken for mood
     bd = Image.open('src_backdrop.png').convert('RGB')
@@ -73,7 +75,7 @@ def sprites():
 
 def icons():
     """App icons for the web manifest: the helicopter over the dusk sky used in the game."""
-    heli = Image.open('heli.png').convert('RGBA')
+    heli = Image.open('heli.webp').convert('RGBA')
     sky = [(0.0, (62, 76, 92)), (0.52, (176, 160, 142)), (0.74, (222, 176, 132)), (0.75, (58, 56, 46)), (1.0, (24, 27, 24))]
 
     def colour(t):

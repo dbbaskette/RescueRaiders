@@ -529,7 +529,7 @@ test('enemy, hit and wreck sprites are shaded from one base image instead of dow
  assert.equal(ASSET_NEED,9);
  const pixel=(side,effect)=>{const d=new Uint8ClampedArray([120,130,110,255,9,9,9,0]);shadePixels(d,side,effect);return d;};
  const friend=pixel(1,''),enemy=pixel(-1,''),hit=pixel(1,'hit'),wreck=pixel(1,'wreck');
- assert.ok(enemy[0]>enemy[1]+30&&enemy[0]>friend[0]);assert.equal(enemy[7],0);assert.deepEqual([...enemy.slice(4,7)],[9,9,9]);
+ assert.ok(enemy[2]>enemy[0]&&enemy[0]<friend[0]);assert.equal(enemy[7],0);assert.deepEqual([...enemy.slice(4,7)],[9,9,9]);
  assert.ok(hit[1]>friend[1]+60);assert.ok(wreck[0]===wreck[1]&&wreck[1]===wreck[2]&&wreck[0]<60);
 `));
 test('sustained slow frames lower render quality and fast frames do not raise it mid-sortie',()=>game()(`

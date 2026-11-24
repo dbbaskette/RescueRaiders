@@ -618,3 +618,10 @@ test('canvas pointer follows active menu controls and the live radar',()=>game()
  G.state='play';mouse.x=RADAR_BOUNDS.x+1;mouse.y=RADAR_BOUNDS.y+1;render();assert.equal(cv.style.cursor,'pointer');
  G.paused=true;render();assert.equal(cv.style.cursor,'default');
 `));
+test('idle pause redraws once and refreshes after input or resize',()=>game()(`
+ ASSETS_OK=true;G.state='play';G.paused=true;let draws=0;render=()=>draws++;
+ frame(20);frame(40);frame(60);assert.equal(draws,1);
+ invalidateScene();frame(80);assert.equal(draws,2);
+ CANVAS_STALE=true;frame(100);assert.equal(draws,3);
+ G.paused=false;frame(120);frame(140);assert.equal(draws,5);
+`));

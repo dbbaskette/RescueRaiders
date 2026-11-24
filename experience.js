@@ -161,9 +161,7 @@ function drawClouds(){
   for(let i=0;i<5;i++){
     const wx=i*2200+((G.time*5+i*93)%2200),x=wx-G.camX*.6,y=180+hash(i+81)*190;
     if(x<-300||x>W+300)continue;
-    cx.save();cx.translate(x,y);cx.scale(1,.2);
-    const cloud=cx.createRadialGradient(0,0,10,0,0,230);cloud.addColorStop(0,'rgba(203,197,180,.10)');cloud.addColorStop(1,'rgba(203,197,180,0)');
-    cx.fillStyle=cloud;cx.fillRect(-240,-240,480,480);cx.restore();
+    drawGlow('light','rgba(203,197,180,.10)',x,y,230,46);
   }cx.restore();
 }
 function drawWindsock(wx){

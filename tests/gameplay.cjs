@@ -625,3 +625,20 @@ test('idle pause redraws once and refreshes after input or resize',()=>game()(`
  CANVAS_STALE=true;frame(100);assert.equal(draws,3);
  G.paused=false;frame(120);frame(140);assert.equal(draws,5);
 `));
+test('replay samples skip live object graphs and reuse interpolation within a segment',()=>game()(`
+ const h=G.helis[0];h.cargoUnits=[{type:'INF',hp:22}];h.target=h;
+ JSON.stringify=JSON.parse=()=>{throw Error('unexpected replay serialization');};
+ h.x=100;recordReplay(.125);G.time+=1;h.x=300;recordReplay(.125);
+ const a=interpolatedReplay(.25);assert.equal(a.helis[0].x,150);
+ assert.equal(a.helis[0].cargoUnits,undefined);assert.equal(a.helis[0].target,undefined);
+ assert.equal(interpolatedReplay(.75),a);assert.equal(a.helis[0].x,250);
+ assert.equal(interpolatedReplay(.1).helis[0].x,120);assert.equal(G.replayFrames[0].helis[0].x,100);
+`));
+test('a bullet crosses an infantry hitbox safely at 30, 60 and 120 Hz',()=>game()(`
+ for(const hz of [30,60,120]){
+   newGame();G.state='play';const inf=spawnUnit(-1,'INF');inf.x=900;inf.landing=.5;
+   G.bullets=[{side:1,x:886,y:GROUND-12,vx:760,vy:0,life:1,dmg:3}];
+   for(let i=0;i<hz/30;i++)advance(1/hz);
+   assert.equal(inf.hp,UT.INF.hp-3);assert.equal(G.bullets.length,0);
+ }
+`));

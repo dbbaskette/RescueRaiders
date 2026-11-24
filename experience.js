@@ -101,18 +101,18 @@ function setOrder(mode){
   else G.groupOrders[G.group]=order;
   if(G.tutorial?.advanced&&G.group==='armor'){if(mode==='hold')G.academyEvents.armorHold=true;if(mode==='rally'&&G.academyEvents.armorHold)G.academyEvents.armorRally=true;}
 }
-function commandMovement(u){
+function commandMovement(u,leads){
   if(u.rescue||u.pilot)return {move:false,dir:u.side};
   if(G.tutorial&&!G.tutorial.advanced)return {move:true,dir:u.side};
-  if(u.side!==1)return enemyMovement(u);
+  if(u.side!==1)return enemyMovement(u,leads);
   const order=orderFor(u);
-  if(order.mode==='advance')return convoyMovement(u);
+  if(order.mode==='advance')return convoyMovement(u,leads);
   if(order.mode==='hold')return {move:false,dir:u.side};
   const delta=order.x-u.x;return {move:Math.abs(delta)>45,dir:Math.sign(delta)||u.side};
 }
 function landingCue(p){
   if(p.dead||p.y<GROUND-160)return null;
-  const hazard=G.units.some(u=>u.side!==p.side&&Math.abs(u.x-p.x)<180)||emplacements().some(t=>t.hp>0&&t.side!==p.side&&Math.abs(t.x-p.x)<180);
+  const hazard=G.units.some(u=>u.side!==p.side&&Math.abs(u.x-p.x)<180)||G.turrets.some(t=>t.hp>0&&t.side!==p.side&&Math.abs(t.x-p.x)<180)||G.bunkers.some(t=>t.garrison>0&&t.hp>0&&t.side!==p.side&&Math.abs(t.x-p.x)<180);
   const speed=Math.abs(p.vx)>35||p.vy>85;
   const nearby=G.units.filter(u=>['INF','ENG'].includes(u.type)&&u.side===p.side&&Math.abs(u.x-p.x)<115).length;
   return {safe:!hazard&&!speed,nearby,seats:4-p.cargo,progress:clamp((p.boardingTimer||0)/.35,0,1),
@@ -185,16 +185,31 @@ function drawTracks(u,x){
   cx.save();cx.strokeStyle='#393d33';cx.lineWidth=1;
   for(let i=0;i<6;i++){const offset=(i*5+(u.phase||0)*2)%30;cx.beginPath();cx.moveTo(x-15+offset,GROUND-3);cx.lineTo(x-13+offset,GROUND-1);cx.stroke();}cx.restore();
 }
+// Snapshots contain only scalar rendering inputs. Live target and cargo object graphs stay in the simulation.
+const REPLAY_FIELDS={
+  helis:'side x y dir hp maxhp dead fuel reserve pitch settle rotorSpeed rotorPhase seed cdGun cargo rearming service mis cdMis',
+  units:'side type x hp maxhp moving phase landing work fireFlash flash aimDir moveDir',
+  bunkers:'x y type hp owner side cd garrison balloonDead cableBroken balloonRespawn capPulse',
+  turrets:'x y type hp maxhp side aim cd',paratroopers:'x y vx phase chuteAge side',canopies:'x side life',
+  wrecks:'type x side life',decals:'x y r life',parts:'x y vx vy c s add streak ring life r bounce puff rot',
+  bullets:'x y vx vy',shells:'x y',bombs:'x y vx vy',missiles:'x y vx vy',flares:'x y life',casualties:'x y side life'
+};
+const REPLAY_GROUPS=Object.entries(REPLAY_FIELDS).map(([name,fields])=>[name,fields.split(' ')]);
 function recordReplay(dt,force=false){
   if(G.tutorial||G.replay)return;G.replayClock+=dt;
   if(!force&&G.replayClock<.125)return;G.replayClock=0;
   const frame={camX:G.camX,time:G.time,anim:G.anim};
   const previous=G.replayFrames.at(-1);frame.at=previous?previous.at+Math.max(.001,G.time-previous.time):0;
-  for(const name of ['helis','units','bunkers','turrets','paratroopers','canopies','wrecks','decals','parts','bullets','shells','bombs','missiles','flares','casualties']){
-    const entities=name==='parts'?G[name].slice(-100):G[name];
-    frame[name]=entities.map(entity=>{if(!entity.replayId)entity.replayId=G.nextReplayId++;return {...entity,target:null};});
+  for(const [name,fields] of REPLAY_GROUPS){
+    const items=G[name],copies=frame[name]=[];
+    for(let i=name==='parts'?Math.max(0,items.length-100):0;i<items.length;i++){
+      const item=items[i];if(!item.replayId)item.replayId=G.nextReplayId++;
+      const copy={replayId:item.replayId};
+      for(const key of fields)if(item[key]!==undefined)copy[key]=item[key];
+      copies.push(copy);
+    }
   }
-  G.replayFrames.push(JSON.parse(JSON.stringify(frame)));if(G.replayFrames.length>64)G.replayFrames.shift();
+  G.replayFrames.push(frame);if(G.replayFrames.length>64)G.replayFrames.shift();
 }
 function replayDuration(){const frames=G.replayFrames;return frames.length>1?frames.at(-1).at-frames[0].at:0;}
 function replayFocus(){
@@ -214,21 +229,32 @@ function startReplay(){
 function stopReplay(){G.replay=null;}
 function toggleReplaySpeed(){if(G.replay)G.replay.speed=G.replay.speed===1?.35:1;}
 function toggleReplayFocus(){if(G.replay)G.replay.follow=!G.replay.follow;}
+const REPLAY_MOTION=['x','y','vx','vy','pitch','rotorPhase','phase','chuteAge','life','r','s','rot'];
+let replaySegment;
+function prepareReplaySegment(a,b){
+  const frame={at:a.at},tracks=[];
+  for(const [name] of REPLAY_GROUPS){
+    const next=new Map(b[name].map(item=>[item.replayId,item]));
+    frame[name]=a[name].map(before=>{
+      const output={...before},after=next.get(before.replayId);
+      if(after)for(const key of REPLAY_MOTION){
+        if(!Number.isFinite(before[key])||!Number.isFinite(after[key])||before[key]===after[key])continue;
+        let delta=after[key]-before[key];if(key==='rotorPhase')delta=(delta+Math.PI*2)%(Math.PI*2);
+        tracks.push({output,key,start:before[key],delta});
+      }
+      return output;
+    });
+  }
+  return {a,b,frame,tracks};
+}
 function interpolatedReplay(time){
   const frames=G.replayFrames,target=frames[0].at+Math.max(0,time);
   let i=0;while(i<frames.length-1&&frames[i+1].at<=target)i++;
   const a=frames[i],b=frames[Math.min(i+1,frames.length-1)],mix=clamp((target-a.at)/Math.max(.001,b.at-a.at),0,1);
-  const frame=JSON.parse(JSON.stringify(a));
-  for(const key of ['camX','time','anim'])frame[key]=a[key]+(b[key]-a[key])*mix;
-  for(const name of Object.keys(frame)){
-    if(!Array.isArray(frame[name]))continue;
-    const next=new Map(b[name].map(entity=>[entity.replayId,entity]));
-    for(const entity of frame[name]){
-      const after=next.get(entity.replayId);if(!after)continue;
-      for(const key of ['x','y','vx','vy','pitch','rotorPhase','phase','chuteAge','life','r','s'])
-        if(Number.isFinite(entity[key])&&Number.isFinite(after[key]))entity[key]+=(key==='rotorPhase'?(after[key]-entity[key]+Math.PI*2)%(Math.PI*2):after[key]-entity[key])*mix;
-    }
-  }
+  if(replaySegment?.a!==a||replaySegment.b!==b)replaySegment=prepareReplaySegment(a,b);
+  const frame=replaySegment.frame;
+  frame.camX=a.camX+(b.camX-a.camX)*mix;frame.time=a.time+(b.time-a.time)*mix;frame.anim=a.anim+(b.anim-a.anim)*mix;
+  for(const track of replaySegment.tracks)track.output[track.key]=track.start+track.delta*mix;
   if(G.replay?.follow){
     const focus=G.replay.focus;
     // Retain the impact location after the tracked projectile disappears.
@@ -254,7 +280,7 @@ function renderReplay(){
     experienceButton('replay_focus',G.replay.follow?'Follow '+G.replay.focus.label+' [F]':'Original camera [F]',760,18,220,toggleReplayFocus);
     cx.restore();
   }
-  if(TOUCH.active&&TOUCH.render)TOUCH.render();
+  if(TOUCH.active&&TOUCH.render)TOUCH.render(false);
 }
 function debriefDetails(){return `${G.stats.rescued} troops + ${G.stats.pilotsRescued} pilots rescued · ${G.stats.bunkersCap} bases · ${G.stats.convoyLost} convoy losses · Last helicopter loss: ${G.stats.lastLoss}`;}
 // One button style for every desktop control. opts: h, size, primary, danger, disabled.

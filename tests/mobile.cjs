@@ -158,3 +158,11 @@ test('a first-time mobile player is pointed at training, and missile warnings us
  emit('m-primary','click');assert.ok(G.tutorial);assert.ok(!G.tutorial.advanced);
  newGame();emit('m-quick','click');const p=G.helis[0];G.missiles.push(mkMissile(p.x+600,p.y,p,-1));TOUCH.render();assert.ok(node('m-notice').textContent.includes('MISSILE'));
 `));
+test('routine HUD updates are throttled while explicit renders and state changes flush',()=>mobile()(`
+ let now=0;performance.now=()=>now;G.state='play';G.paused=false;TOUCH.render();
+ const initial=node('m-funds').textContent;G.funds+=10;
+ now=16;TOUCH.render(false);assert.equal(node('m-funds').textContent,initial);
+ now=51;TOUCH.render(false);assert.equal(node('m-funds').textContent,'$'+G.funds);
+ G.funds+=10;TOUCH.render();assert.equal(node('m-funds').textContent,'$'+G.funds);
+ G.paused=true;TOUCH.render(false);assert.equal(node('m-modal').hidden,false);
+`));

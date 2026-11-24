@@ -655,7 +655,9 @@ function radarJammed(side=1){
   const h=G.helis.find(h=>h.side===side);
   return !!h&&!h.dead&&G.units.some(u=>u.type==='VAN'&&u.side!==side&&Math.abs(u.x-h.x)<1100);
 }
-function emplacements(){return [...G.turrets,...G.bunkers.filter(b=>b.garrison>0)];}
+// Standalone callers receive a fresh list. The simulation scans the source arrays directly.
+function emplacements(){return G.turrets.concat(G.bunkers.filter(b=>b.garrison>0));}
+function activeEmplacement(t){return t.hp>0&&(t.type!=='BUNKER'||t.garrison>0);}
 function hurtEmplacement(t,d){
   impactEffect(t.x,t.y,'armor');
   t.hp=Math.max(0,t.hp-d);
@@ -663,8 +665,13 @@ function hurtEmplacement(t,d){
   if(t.hp===0){t.side=0;if(t.type==='BUNKER'){t.owner=0;t.balloonDead=true;t.cableBroken=true;}}
 }
 function hitEmplacement(x,y,side,d){
-  const t=emplacements().find(t=>t.hp>0&&t.side!==side&&Math.abs(t.x-x)<UT[t.type].w/2&&Math.abs(y-t.y)<24);
-  if(t){hurtEmplacement(t,d);return true;}return false;
+  for(let group=0;group<2;group++){
+    for(const t of group===0?G.turrets:G.bunkers){
+      if(!activeEmplacement(t)||t.side===side)continue;
+      if(Math.abs(t.x-x)<UT[t.type].w/2&&Math.abs(y-t.y)<24){hurtEmplacement(t,d);return true;}
+    }
+  }
+  return false;
 }
 function engineerWork(u,dt){
   const t=G.turrets.find(t=>Math.abs(t.x-u.x)<65&&(t.side!==u.side||t.hp<t.maxhp));
@@ -681,11 +688,10 @@ function engineerWork(u,dt){
   u.work=0;return false;
 }
 function updateEmplacements(dt){
-  for(const t of emplacements()){
-    if(t.hp<=0||!t.side)continue;t.cd-=dt;
+  for(let group=0;group<2;group++)for(const t of group===0?G.turrets:G.bunkers){
+    if(!activeEmplacement(t)||!t.side)continue;t.cd-=dt;
     const target=(t.type==='TURRET'?nearestAirTarget(t.x,t.y,t.side,650):null)||
-      G.units.filter(u=>u.side!==t.side&&(t.type==='TURRET'||u.type!=='TANK'))
-        .find(u=>Math.abs(u.x-t.x)<420);
+      G.units.find(u=>u.side!==t.side&&(t.type==='TURRET'||u.type!=='TANK')&&Math.abs(u.x-t.x)<420);
     if(target)t.aim=Math.atan2((target.y||GROUND-10)-t.y,target.x-t.x);
     if(target&&t.cd<=0){
       t.cd=t.type==='TURRET'?.65:1.1;SFX.gun(t.x,'rifle');
@@ -843,9 +849,14 @@ function hitBalloonOrCable(x,y,side,dmg){
   return hitBalloon(x,y,side,dmg)||hitCable(x,y,side,dmg);
 }
 function nearestGroundTarget(x,y,side,maxD){
-  let best=null,bd=maxD;
-  for(const u of [...G.units,...emplacements().filter(t=>t.hp>0)])if(u.side!==side){
-    const d=Math.hypot(u.x-x,(GROUND-UT[u.type].h/2)-y);if(d<bd){bd=d;best=u;}
+  let best=null,bd=maxD*maxD;
+  for(let group=0;group<3;group++){
+    const targets=group===0?G.units:group===1?G.turrets:G.bunkers;
+    for(const u of targets){
+      if(u.side===side||group>0&&!activeEmplacement(u))continue;
+      const dx=u.x-x,dy=GROUND-UT[u.type].h/2-y,d=dx*dx+dy*dy;
+      if(d<bd){best=u;bd=d;}
+    }
   }
   return best;
 }
@@ -899,7 +910,7 @@ function explode(x,y,r,dmg,side){
     if(Math.abs(u.x-x)<r+UT[u.type].w/2&&Math.abs((GROUND-UT[u.type].h)-y)<r+30)
       hurtUnit(u,dmg);
   }
-  for(const t of emplacements())if(t.hp>0&&t.side!==side&&Math.hypot(t.x-x,t.y-y)<r+30)hurtEmplacement(t,dmg);
+  for(let group=0;group<2;group++)for(const t of group===0?G.turrets:G.bunkers)if(activeEmplacement(t)&&t.side!==side&&Math.hypot(t.x-x,t.y-y)<r+30)hurtEmplacement(t,dmg);
   for(const h of G.helis){
     if(h.dead||h.side===side)continue;
     if(Math.hypot(h.x-x,h.y-y)<r+22)hurtHeli(h,dmg*.8,{x,y});
@@ -1135,15 +1146,17 @@ function update(dt){
   }
   // Keep cosmetic work bounded without changing projectile simulation.
   if(G.parts.length>particleLimit())G.parts.splice(0,G.parts.length-particleLimit());
-  // particles
-  for(let i=G.parts.length-1;i>=0;i--){
+  // Compact survivors in place. Render order and the newest replay particles stay stable.
+  let survivors=0;
+  for(let i=0;i<G.parts.length;i++){
     const p=G.parts[i];p.life-=dt;
     if(p.ring)p.r+=p.vr*dt;
     else{p.x+=(p.vx+(p.wind||0)*windAt(G.time))*dt;p.y+=p.vy*dt;p.vy+=(p.g||0)*380*dt;}
     if(p.vrot)p.rot+=p.vrot*dt;
     if(p.grow)p.s+=p.grow*dt;
-    if(p.life<=0)G.parts.splice(i,1);
+    if(p.life>0)G.parts[survivors++]=p;
   }
+  G.parts.length=survivors;
   // messages
   for(let i=G.msgs.length-1;i>=0;i--){
     G.msgs[i].age+=dt;
@@ -1255,13 +1268,14 @@ function updateEnemyHeli(h,dt){
 
 // ---------- ground units
 function updateUnits(dt){
+  const leads=convoyLeaders();
   const sorted=[...G.units].sort((a,b)=>a.x-b.x);
   for(const u of sorted){
     const st=UT[u.type];
     const previousX=u.x;u.moving=false;
     u.cd-=dt;u.flash=Math.max(0,u.flash-dt);u.fireFlash=Math.max(0,(u.fireFlash||0)-dt);
     if(u.landing>0){u.landing=Math.max(0,u.landing-dt);continue;}
-    const command=commandMovement(u),dir=command.dir;
+    const command=commandMovement(u,leads),dir=command.dir;
     if(u.type==='ENG'&&engineerWork(u,dt))continue;
     // targets
     const gt=nearestGroundTarget(u.x,GROUND,u.side,st.rng);
@@ -1390,7 +1404,7 @@ function updateProjectiles(dt){
       }
     }
     const t=m.target;
-    const gone=!t||(t.dead)||(!G.units.includes(t)&&!G.helis.includes(t)&&!G.flares.includes(t)&&!emplacements().includes(t))||!!t&&t.hp===0;
+    const gone=!t||(t.dead)||(!G.units.includes(t)&&!G.helis.includes(t)&&!G.flares.includes(t)&&!G.turrets.includes(t)&&!(t.garrison>0&&G.bunkers.includes(t)))||!!t&&t.hp===0;
     if(gone)m.target=null;
     if(m.target){
       const dx=m.target.x-m.x,dy=(m.target.y||GROUND-10)-m.y;
@@ -1514,7 +1528,7 @@ function render(){
     cx.fillStyle='rgba(255,240,214,'+G.flash+')';
     cx.fillRect(0,0,W,H);
   }
-  if(TOUCH.active&&TOUCH.render){G.buttons=[];TOUCH.render();}
+  if(TOUCH.active&&TOUCH.render){G.buttons=[];TOUCH.render(false);}
   else{drawHUD();drawOverlays();drawExperienceUI();drawOperationsUI();updateCanvasCursor();}
   drawDamageEdges();
 }
@@ -1829,7 +1843,7 @@ function drawBunker(b){
 
   // Capture status pill
   if(b.owner!==1){
-    const cnt=G.units.filter(u=>u.type==='INF'&&u.side===1&&Math.abs(u.x-b.x)<70).length;
+    let cnt=0;for(const u of G.units)if(u.type==='INF'&&u.side===1&&Math.abs(u.x-b.x)<70)cnt++;
     if(cnt>0){
       cx.save();
       const pw=54,ph=18,px=x-pw/2,py=GROUND-64;
@@ -2332,6 +2346,7 @@ function drawHUD(){
 
   // 4. TOP-RIGHT TACTICAL RADAR
   {
+    const jammed=radarJammed();
     const {x:rx,y:ry,w:rw,h:rh}=RADAR_BOUNDS;
     cx.save();
     cx.fillStyle='rgba(8,12,24,.9)';cx.fillRect(rx,ry,rw,rh);
@@ -2346,7 +2361,7 @@ function drawHUD(){
     cx.fillStyle='#4db2ff';cx.textAlign='left';cx.fillText('BLUE HQ',rx+4,ry+rh-4);
     cx.fillStyle='#ff5548';cx.textAlign='right';cx.fillText('RED HQ',rx+rw-4,ry+rh-4);
 
-    if(radarJammed()){cx.fillStyle='#ffd070';cx.textAlign='center';cx.fillText('JAMMED',rx+rw/2,ry+12);}
+    if(jammed){cx.fillStyle='#ffd070';cx.textAlign='center';cx.fillText('JAMMED',rx+rw/2,ry+12);}
     const mx=x=>rx+(x/WORLD)*rw;
 
     for(const t of G.turrets){cx.fillStyle=t.side===1?'#72d7c0':t.side===-1?'#f48277':'#8b959e';cx.fillRect(mx(t.x)-2,ry+rh-7,4,5);}
@@ -2367,7 +2382,7 @@ function drawHUD(){
     }
 
     for(const u of G.units){
-      if(radarJammed()&&u.side!==1)continue;
+      if(jammed&&u.side!==1)continue;
       const ux=mx(u.x);
       const uCol=u.side===1?'#4db2ff':'#ff5548';
       const uy=ry+rh-13;
@@ -2399,7 +2414,7 @@ function drawHUD(){
     }
 
     for(const h of G.helis){
-      if(h.dead||(radarJammed()&&h.side!==1))continue;
+      if(h.dead||(jammed&&h.side!==1))continue;
       const hx=mx(h.x),hy=ry+clamp(h.y/GROUND*(rh-14),8,rh-9);
       const hCol=h.side===1?'#4db2ff':'#ff5548';
       cx.strokeStyle=hCol;cx.lineWidth=1.2;
@@ -2802,7 +2817,7 @@ function frame(t){
       cx.fillStyle='#ff5548';cx.font='14px '+FONT;
       cx.fillText('FAILED: '+ASSET_FAIL.join(', '),W/2,H/2+40);
     }
-    if(TOUCH.active&&TOUCH.render)TOUCH.render();
+    if(TOUCH.active&&TOUCH.render)TOUCH.render(false);
     return;
   }
   if(G.replay){G.replay.time+=dt*G.replay.speed;if(G.replay.time>replayDuration()+.6)stopReplay();}
@@ -2812,7 +2827,7 @@ function frame(t){
   updateRotorAudio();
   const idle=G.state==='play'&&G.paused&&!G.replay;
   if(!idle||!pausedSceneDrawn)render();
-  else if(TOUCH.active&&TOUCH.render)TOUCH.render();
+  else if(TOUCH.active&&TOUCH.render)TOUCH.render(false);
   pausedSceneDrawn=idle;
 }
 function aiTick(dt){

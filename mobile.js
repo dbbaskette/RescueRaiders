@@ -51,7 +51,14 @@
       <div class="panel"><p class="eyebrow">LANDSCAPE FLIGHT DECK</p><h1>Rotate to fly</h1><p class="description">Turn your phone sideways for two-thumb controls and a wider view. Your mission stays paused.</p></div>
     </section>`;
   document.body.append(root);
-  const el=id=>document.getElementById(id);
+  const nodes=new Map();
+  function el(id){
+    if(!nodes.has(id))nodes.set(id,document.getElementById(id));
+    return nodes.get(id);
+  }
+  const topbar=root.querySelector('.topbar'),panel=el('m-modal').querySelector('.panel');
+  const weaponLabels={};
+  for(const id of ['touch-bomb','touch-missile','touch-flare'])weaponLabels[id]=el(id).querySelector('small');
   const stick=el('flight-stick'),knob=el('stick-knob');
   let stickId=null,tray=false,trayWasPaused=false,portrait=false,panelView='';
   const owners=new Map();
@@ -155,7 +162,7 @@
       if(!tray||portrait||G.state!=='play')return;unlock();const before=G.units.length;buy(1,type);
       el('m-tray-status').textContent=G.units.length>before?`${name} deployed. $${G.funds} remaining.`:G.msgs[0]?.text||'Cannot deploy.';
     });
-    el('m-unit-list').append(button);unitButtons.push({button,type});
+    el('m-unit-list').append(button);unitButtons.push({button,type,price:button.querySelector('small')});
   }
   function orientation(){
     const next=innerHeight>innerWidth;
@@ -171,7 +178,7 @@
   });
   const radar=el('touch-radar').getContext('2d');
   function drawRadar(){
-    const r=radar,mx=x=>x/WORLD*340;r.clearRect(0,0,340,74);
+    const jammed=radarJammed(),r=radar,mx=x=>x/WORLD*340;r.clearRect(0,0,340,74);
     r.strokeStyle='#284a50';r.lineWidth=1;for(let x=0;x<340;x+=56)r.strokeRect(x,0,56,74);
     for(const t of G.turrets){r.fillStyle=t.side===1?'#72d7c0':t.side===-1?'#f48277':'#8b959e';r.fillRect(mx(t.x)-2,64,4,5);}
     for(const b of G.bunkers){const x=mx(b.x);r.fillStyle=b.owner===1?'#7cd6b0':'#fa8278';
@@ -179,76 +186,95 @@
       if(!b.balloonDead&&!b.cableBroken){r.fillRect(x,16,1,43);r.beginPath();r.arc(x,13,3,0,7);r.fill();}
       if(b.owner===1){r.fillRect(x+5,56,7,2);r.fillRect(x+7,54,2,6);}
     }
-    for(const u of G.units){if(radarJammed()&&u.side!==1)continue;const x=mx(u.x);r.fillStyle=u.side===1?'#76cbbb':'#f98477';
+    for(const u of G.units){if(jammed&&u.side!==1)continue;const x=mx(u.x);r.fillStyle=u.side===1?'#76cbbb':'#f98477';
       if(u.type==='VAN'){r.globalAlpha=.65+.35*Math.sin(G.anim*8)**2;r.beginPath();r.moveTo(x+u.side*6,58);r.lineTo(x-u.side*4,52);r.lineTo(x-u.side*4,64);r.closePath();r.fill();r.globalAlpha=1;}
       else r.fillRect(x-1,61,3,3);
     }
-    for(const h of G.helis)if(!h.dead&&(!radarJammed()||h.side===1)){const x=mx(h.x),y=clamp(h.y/GROUND*56,5,56);
+    for(const h of G.helis)if(!h.dead&&(!jammed||h.side===1)){const x=mx(h.x),y=clamp(h.y/GROUND*56,5,56);
       r.strokeStyle=h.side===1?'#fff':'#ff9682';r.beginPath();r.arc(x,y,4,0,7);r.moveTo(x-7,y);r.lineTo(x+7,y);r.stroke();}
-    if(radarJammed()){r.fillStyle='#ffd070';r.font='bold 11px '+FONT;r.fillText('JAMMED',140,12);}
+    if(jammed){r.fillStyle='#ffd070';r.font='bold 11px '+FONT;r.fillText('JAMMED',140,12);}
     r.strokeStyle='#cbe7de88';r.strokeRect(mx(G.camX),1,W/WORLD*340,71);
   }
+  const lastValues=new WeakMap();
+  function changed(node,key,value){
+    let values=lastValues.get(node);
+    if(!values){values=new Map();lastValues.set(node,values);}
+    if(values.has(key)&&values.get(key)===value)return false;
+    values.set(key,value);return true;
+  }
+  function prop(node,key,value){if(node[key]!==value)node[key]=value;}
+  function attr(node,key,value){if(changed(node,key,value))node.setAttribute(key,value);}
+  function toggle(node,key,on){if(changed(node,key,on))node.classList.toggle(key,on);}
   function text(id,value){const node=el(id);if(node.textContent!==value)node.textContent=value;}
-  TOUCH.render=()=>{
-    el('m-replay-controls').hidden=!G.replay||portrait;
+  // Explicit renders and button events synchronize immediately. Routine frames update at 20 Hz.
+  let nextSync=0,lastState,lastPaused,lastReplay,lastReady;
+  TOUCH.render=(force=true)=>{
+    const now=performance.now();
+    if(!force&&now<nextSync&&G.state===lastState&&G.paused===lastPaused&&G.replay===lastReplay&&ASSETS_OK===lastReady)return;
+    nextSync=now+50;lastState=G.state;lastPaused=G.paused;lastReplay=G.replay;lastReady=ASSETS_OK;
+    prop(el('m-replay-controls'),'hidden',!G.replay||portrait);
     text('m-replay-speed',G.replay?.speed===.35?'Speed: 0.35×':'Speed: 1×');
     text('m-replay-focus',G.replay?.follow?'Following '+G.replay.focus.label:'Original camera');
-    if(G.replay){el('m-modal').hidden=true;el('m-controls').hidden=true;root.querySelector('.topbar').inert=true;el('m-training').hidden=true;return;}
+    if(G.replay){prop(el('m-modal'),'hidden',true);prop(el('m-controls'),'hidden',true);prop(topbar,'inert',true);prop(el('m-training'),'hidden',true);return;}
     const p=G.helis[0],menu=G.state!=='play'||G.paused||tray||!ASSETS_OK;
     const view=menu?(tray?'command':G.state):'';
-    if(view!==panelView){el('m-modal').querySelector('.panel').scrollTop=0;panelView=view;}
+    if(view!==panelView){panel.scrollTop=0;panelView=view;}
     if(menu||p.dead||portrait){if(TOUCH.fire||TOUCH.x||TOUCH.y||G.bombAiming||owners.size)reset();}
-    root.querySelector('.topbar').inert=menu||portrait;
-    el('m-controls').hidden=menu||p.dead||portrait;
-    el('m-modal').hidden=!menu||portrait;
-    el('m-command').hidden=!tray;
-    el('m-campaign').hidden=G.state!=='menu'||tray;
-    el('m-replay').hidden=!['win','over'].includes(G.state)||G.replayFrames.length<2;
+    prop(topbar,'inert',menu||portrait);
+    prop(el('m-controls'),'hidden',menu||p.dead||portrait);
+    prop(el('m-modal'),'hidden',!menu||portrait);
+    prop(el('m-command'),'hidden',!tray);
+    prop(el('m-campaign'),'hidden',G.state!=='menu'||tray);
+    prop(el('m-replay'),'hidden',!['win','over'].includes(G.state)||G.replayFrames.length<2);
     text('m-shake','Shake: '+shakeLabel());
-    el('m-operations-menu').hidden=G.state!=='menu'||tray;
-    el('m-resume').disabled=PROGRESS.checkpoint===null;
+    prop(el('m-operations-menu'),'hidden',G.state!=='menu'||tray);
+    prop(el('m-resume'),'disabled',PROGRESS.checkpoint===null);
     text('m-resume',PROGRESS.checkpoint===null?'No checkpoint yet':'Resume mission '+(PROGRESS.checkpoint+1));
     text('m-weather','Weather: '+weatherLabel());text('m-night',SETTINGS.night?'Night operations':'Day operations');
-    text('m-formation','Escorts: '+(G.formation?'On':'Off'));el('m-bailout').disabled=!canBailout();
-    el('m-bailout').title='Requires hull at 35% or less, altitude above 130m and a spare helicopter';
-    for(const group of ['all','infantry','armor','support']){el('m-group-'+group).classList.toggle('selected',G.group===group);el('m-group-'+group).setAttribute('aria-pressed',String(G.group===group));}
-    const navigation=returnGuidance();el('m-navigation').hidden=!navigation||menu||portrait;
-    text('m-navigation',navigation?navigation.label:'');el('m-navigation').classList.toggle('urgent',!!navigation?.warning);
-    for(const mode of ['advance','hold','rally']){el('m-'+mode).classList.toggle('selected',activeOrder().mode===mode);el('m-'+mode).setAttribute('aria-pressed',String(activeOrder().mode===mode));}
+    text('m-formation','Escorts: '+(G.formation?'On':'Off'));prop(el('m-bailout'),'disabled',!canBailout());
+    prop(el('m-bailout'),'title','Requires hull at 35% or less, altitude above 130m and a spare helicopter');
+    for(const group of ['all','infantry','armor','support']){toggle(el('m-group-'+group),'selected',G.group===group);attr(el('m-group-'+group),'aria-pressed',String(G.group===group));}
+    const navigation=returnGuidance();prop(el('m-navigation'),'hidden',!navigation||menu||portrait);
+    text('m-navigation',navigation?navigation.label:'');toggle(el('m-navigation'),'urgent',!!navigation?.warning);
+    const orderMode=activeOrder().mode;
+    for(const mode of ['advance','hold','rally']){toggle(el('m-'+mode),'selected',orderMode===mode);attr(el('m-'+mode),'aria-pressed',String(orderMode===mode));}
     const manifest=cargoManifest(p);
-    cargoButtons.forEach((button,i)=>{const c=manifest[i];button.disabled=!c;button.textContent=c?`${c.pilot?'PILOT':c.type} ${Math.ceil(c.hp/UT[c.type].hp*100)}%`:'Empty';button.classList.toggle('selected',!!c&&i===G.selectedCargo);button.setAttribute('aria-pressed',String(!!c&&i===G.selectedCargo));});
-    el('m-drop-selected').disabled=!p.cargo||p.dead;
-    el('m-unit-list').hidden=!tray;el('m-tray-status').hidden=!tray;
-    el('m-restart').hidden=tray||G.state!=='play';el('m-quit').hidden=tray||G.state!=='play';
-    el('m-quick').hidden=primarySortie().id==='quick';
-    el('m-fullscreen').hidden=!fullscreenAvailable();text('m-fullscreen',isFullscreen()?'Leave fullscreen':'Fullscreen');
-    el('m-primary').disabled=!ASSETS_OK;el('m-units').disabled=!!G.tutorial&&!G.tutorial.advanced;
-    el('m-options').hidden=G.state==='play'||tray;el('m-tutorial').hidden=G.state==='play'||tray;
-    for(const {button,id} of difficultyButtons){button.classList.toggle('selected',SETTINGS.difficulty===id);button.setAttribute('aria-pressed',String(SETTINGS.difficulty===id));}
-    el('m-training').hidden=!G.tutorial||menu||portrait;text('m-training',tutorialHint());
+    cargoButtons.forEach((button,i)=>{const c=manifest[i];prop(button,'disabled',!c);prop(button,'textContent',c?`${c.pilot?'PILOT':c.type} ${Math.ceil(c.hp/UT[c.type].hp*100)}%`:'Empty');toggle(button,'selected',!!c&&i===G.selectedCargo);attr(button,'aria-pressed',String(!!c&&i===G.selectedCargo));});
+    prop(el('m-drop-selected'),'disabled',!p.cargo||p.dead);
+    prop(el('m-unit-list'),'hidden',!tray);prop(el('m-tray-status'),'hidden',!tray);
+    prop(el('m-restart'),'hidden',tray||G.state!=='play');prop(el('m-quit'),'hidden',tray||G.state!=='play');
+    prop(el('m-quick'),'hidden',primarySortie().id==='quick');
+    prop(el('m-fullscreen'),'hidden',!fullscreenAvailable());text('m-fullscreen',isFullscreen()?'Leave fullscreen':'Fullscreen');
+    prop(el('m-primary'),'disabled',!ASSETS_OK);prop(el('m-units'),'disabled',!!G.tutorial&&!G.tutorial.advanced);
+    prop(el('m-options'),'hidden',G.state==='play'||tray);prop(el('m-tutorial'),'hidden',G.state==='play'||tray);
+    for(const {button,id} of difficultyButtons){toggle(button,'selected',SETTINGS.difficulty===id);attr(button,'aria-pressed',String(SETTINGS.difficulty===id));}
     if(menu){
       text('m-title',!ASSETS_OK?'Loading aircraft…':tray?'Field command':G.state==='menu'?'RESCUE RAIDERS':G.state==='win'?'Mission accomplished':G.state==='over'?'Mission failed':'Flight paused');
       text('m-description',tray?`$${G.funds} · ${missionText()}`:G.state==='menu'?'Left thumb: steer. Right thumb: hold FIRE, hold and release BOMB. Capture bunkers and escort your Demo Van to enemy HQ.'+(PROGRESS.sessionOnly?' Browser storage unavailable; checkpoints last only in this tab.':''):G.state==='play'?'Your helicopter is safe while paused. Resume when you are ready.':`${G.endMsg} · Score ${G.score} · ${debriefDetails()}`);
       text('m-primary',tray?'Back to flight':G.state==='play'?'Resume flight':G.state==='menu'?primarySortie().label:sortieLabel());
     }
-    for(const {button,type} of unitButtons){const active=type==='VAN'&&G.units.some(u=>u.side===1&&u.type==='VAN');button.disabled=active||G.funds<UT[type].cost;button.querySelector('small').textContent=active?'Active':`$${UT[type].cost}`;}
+    for(const {button,type,price} of unitButtons){const active=type==='VAN'&&G.units.some(u=>u.side===1&&u.type==='VAN');prop(button,'disabled',active||G.funds<UT[type].cost);prop(price,'textContent',active?'Active':`$${UT[type].cost}`);}
     for(const [name,value] of [['hull',Math.max(0,p.hp/p.maxhp*100)],['fuel',p.fuel]]){
-      el(`m-${name}`).style.width=`${value}%`;el(`m-${name}`).style.background=value<(name==='fuel'?20:25)?'#ffb16f':'#8edfb1';text(`m-${name}-value`,name==='fuel'&&p.fuel<=0?`R ${Math.ceil(p.reserve)}s`:`${Math.ceil(value)}%`);
-      el(`m-${name}`).classList.toggle('servicing',p.rearming);
+      const meter=el(`m-${name}`);
+      prop(meter.style,'width',Math.round(value*10)/10+'%');
+      const color=value<(name==='fuel'?20:25)?'#ffb16f':'#8edfb1';
+      if(changed(meter,'background',color))meter.style.background=color;
+      text(`m-${name}-value`,name==='fuel'&&p.fuel<=0?`R ${Math.ceil(p.reserve)}s`:`${Math.ceil(value)}%`);
+      toggle(el(`m-${name}`),'servicing',p.rearming);
     }
-    el('m-training').hidden=(!G.tutorial&&G.campaign===null)||menu||portrait;
+    prop(el('m-training'),'hidden',(!G.tutorial&&G.campaign===null)||menu||portrait);
     text('m-training',G.tutorial?tutorialHint():missionText());
     text('m-funds',`$${G.funds}`);text('m-lives',`${G.lives} lives · ${G.score} pts`);
-    text('m-audio',AUDIO_MUTED?'MUTED':'SOUND');el('m-audio').setAttribute('aria-label',AUDIO_MUTED?'Unmute sound':'Mute sound');
-    el('touch-bomb').querySelector('small').textContent=G.bombAiming?`${bombGroundTime(bombFromHeli(p)).toFixed(1)}s ETA`:`${Math.floor(p.bombs)} · hold`;
-    el('touch-missile').querySelector('small').textContent=`${Math.floor(p.mis)}`;
-    el('touch-flare').querySelector('small').textContent=`${Math.floor(p.flares)}`;
-    el('touch-missile').disabled=(p.mis<1||p.cdMis>0)&&!owners.has(el('touch-missile'));
-    el('touch-flare').disabled=p.flares<1&&!owners.has(el('touch-flare'));
+    text('m-audio',AUDIO_MUTED?'MUTED':'SOUND');attr(el('m-audio'),'aria-label',AUDIO_MUTED?'Unmute sound':'Mute sound');
+    prop(weaponLabels['touch-bomb'],'textContent',G.bombAiming?`${bombGroundTime(bombFromHeli(p)).toFixed(1)}s ETA`:`${Math.floor(p.bombs)} · hold`);
+    prop(weaponLabels['touch-missile'],'textContent',`${Math.floor(p.mis)}`);
+    prop(weaponLabels['touch-flare'],'textContent',`${Math.floor(p.flares)}`);
+    prop(el('touch-missile'),'disabled',(p.mis<1||p.cdMis>0)&&!owners.has(el('touch-missile')));
+    prop(el('touch-flare'),'disabled',p.flares<1&&!owners.has(el('touch-flare')));
     const troops=G.units.filter(u=>['INF','ENG'].includes(u.type)&&u.side===1&&Math.abs(u.x-p.x)<115).length;
-    el('touch-cargo').hidden=!p.cargo&&(p.y<GROUND-130||!troops);
+    prop(el('touch-cargo'),'hidden',!p.cargo&&(p.y<GROUND-130||!troops));
     text('touch-cargo',p.cargo?(p.y<GROUND-130?'Parachute 1':`Drop ${p.cargo} troops`):`Board ${Math.min(4,troops)} troops`);
-    el('cancel-bomb').hidden=!G.bombAiming;
+    prop(el('cancel-bomb'),'hidden',!G.bombAiming);
     let notice='',danger=false;
     if(p.dead)notice=`Helicopter down · ${Math.max(0,Math.ceil(p.respawn))}s`;
     else if(p.hp<p.maxhp*.25){notice='CRITICAL HULL · Land at a friendly pad';danger=true;}
@@ -261,12 +287,16 @@
     else if(G.msgs.some(m=>m.kind!=='routine'))notice=G.msgs.find(m=>m.kind!=='routine').text;
     else if(G.scanTimer>0)notice='Scanning · Move joystick to return';
     const threat=vanThreat();
-    el('m-van').hidden=!threat||menu||portrait;
+    prop(el('m-van'),'hidden',!threat||menu||portrait);
     text('m-van',threat?`HQ breach ~${formatETA(threat.seconds)}`:'');
-    el('m-van').classList.toggle('urgent',!!threat&&threat.level>0);
-    el('m-notice').hidden=!notice||menu||portrait;el('m-notice').classList.toggle('danger',danger);const compact=notice.startsWith('CRITICAL HULL')?'HULL CRITICAL · LAND':notice.startsWith('CABLE AHEAD')?'CABLE · CLIMB':notice.startsWith('INCOMING MISSILE')?'MISSILE · FLARE':notice.startsWith('LOW FUEL')?'LOW FUEL · LAND':notice;
-    text('m-notice',compact);el('m-notice').title=notice;
+    toggle(el('m-van'),'urgent',!!threat&&threat.level>0);
+    prop(el('m-notice'),'hidden',!notice||menu||portrait);toggle(el('m-notice'),'danger',danger);const compact=notice.startsWith('CRITICAL HULL')?'HULL CRITICAL · LAND':notice.startsWith('CABLE AHEAD')?'CABLE · CLIMB':notice.startsWith('INCOMING MISSILE')?'MISSILE · FLARE':notice.startsWith('LOW FUEL')?'LOW FUEL · LAND':notice;
+    text('m-notice',compact);prop(el('m-notice'),'title',notice);
     drawRadar();
   };
+  for(const event of ['click','pointerdown','pointerup','pointercancel','lostpointercapture']){
+    root.addEventListener(event,()=>TOUCH.render());
+  }
+  addEventListener('resize',()=>TOUCH.render());
   orientation();TOUCH.render();
 })();

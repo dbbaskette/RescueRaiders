@@ -88,24 +88,33 @@ function vanDash(u){return u.type==='VAN'&&(u.side>0?ENEMY_X-70-u.x:u.x-(PLAYER_
 // The escort setting is the player's; the enemy column always keeps formation.
 function formationOn(side){return side!==1||G.formation;}
 function canPass(u,o){return u.side===o.side&&(vanDash(u)||formationOn(u.side)&&formationRank(u)>formationRank(o)&&!(u.side===1&&orderFor(u).mode!=='advance'));}
-function convoyMovement(u){
+function convoyLeaders(){
+  const sides={1:{},'-1':{}};
+  for(const u of G.units){
+    if(u.rescue||u.pilot||u.side===-1&&!u.aiReleased)continue;
+    const role=u.type==='TANK'?'tank':u.type==='INF'||u.type==='AA'?'escort':null;
+    if(!role)continue;
+    const leaders=sides[u.side],prior=leaders[role];
+    if(!prior||(u.x-prior.x)*u.side>=0)leaders[role]=u;
+  }
+  return sides;
+}
+function convoyMovement(u,leads){
   if(vanDash(u)||!formationOn(u.side)||u.type==='TANK'||u.type==='ENG')return {move:true,dir:u.side};
-  const allies=G.units.filter(o=>o!==u&&o.side===u.side&&!o.rescue&&!o.pilot&&o.type!=='ENG'&&(u.side===1||o.aiReleased));
-  const tanks=allies.filter(o=>o.type==='TANK');
-  const escorts=tanks.length?tanks:allies.filter(o=>o.type==='INF'||o.type==='AA');
-  if(!escorts.length)return {move:u.type!=='VAN',dir:u.side};
-  const lead=escorts.reduce((a,b)=>a.x*u.side>b.x*u.side?a:b);
-  if(!tanks.length&&u.type!=='VAN')return {move:true,dir:u.side};
+  const leaders=(leads||convoyLeaders())[u.side];
+  if(!leaders.tank&&u.type!=='VAN')return {move:true,dir:u.side};
+  const lead=leaders.tank||leaders.escort;
+  if(!lead)return {move:false,dir:u.side};
   const gap=(lead.x-u.x)*u.side,spacing={INF:65,AA:125,VAN:210}[u.type]||65;
   return {move:gap>spacing,dir:u.side,speed:Math.min(UT[u.type].spd,UT[lead.type].spd+Math.max(0,gap-spacing-20)*.2)};
 }
-function enemyMovement(u){
+function enemyMovement(u,leads){
   if(u.type==='ENG'){
     const target=G.turrets.filter(t=>(t.side!==-1||t.hp<t.maxhp)&&Math.abs(t.x-u.x)<1400).sort((a,b)=>Math.abs(a.x-u.x)-Math.abs(b.x-u.x))[0];
     if(target)return {move:Math.abs(target.x-u.x)>45,dir:Math.sign(target.x-u.x)||-1};
   }
   if(!u.aiReleased)return {move:false,dir:-1};
-  return convoyMovement(u);
+  return convoyMovement(u,leads);
 }
 function radio(message){if(G.time<G.radioUntil)return;G.radio={text:message,until:G.time+5};G.radioUntil=G.time+9;SFX.blip();}
 function updateOperations(dt){

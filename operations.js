@@ -221,8 +221,7 @@ function drawWeather(){
 function drawNight(){
   if(!G.environment?.night)return;
   cx.save();
-  const darkness=cx.createLinearGradient(0,0,0,GROUND);
-  darkness.addColorStop(0,'rgba(4,11,29,.94)');darkness.addColorStop(.45,'rgba(7,17,34,.80)');darkness.addColorStop(1,'rgba(5,13,28,.52)');
+  const darkness=sceneGradient('night');
   cx.fillStyle=darkness;cx.fillRect(-24,-24,W+48,H+48);
   if(G.environment.weather!=='rain'){
     cx.fillStyle='rgba(192,213,222,.48)';for(let i=0;i<32;i++)cx.fillRect(hash(i+411)*W,110+hash(i+731)*115,1,1);

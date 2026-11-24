@@ -157,6 +157,13 @@ function updateAtmosphere(dt){
 }
 function drawClouds(){
   cx.save();
+  if(G.environment?.night&&G.environment.weather!=='rain'){
+    for(let i=0;i<56;i++){
+      const x=(hash(i+411)*W-G.camX*.03+W)%W,y=20+hash(i+731)*195;
+      cx.globalAlpha=.5+.4*Math.sin(G.time*1.6+i);cx.fillStyle='#d2e2f1';cx.fillRect(x,y,1.6,1.6);
+    }
+    cx.globalAlpha=1;
+  }
   // Thin, slow-moving banks stay translucent so they never conceal hazards.
   for(let i=0;i<5;i++){
     const wx=i*2200+((G.time*5+i*93)%2200),x=wx-G.camX*.6,y=180+hash(i+81)*190;
@@ -236,7 +243,7 @@ function renderReplay(){
   cx.save();
   try{
     G={...live,...frame,replayView:true,paused:true,buttons:[]};
-    drawSky();drawBackdrop();drawHills();drawClouds();drawGround();drawDecals();drawWrecks();drawBases();
+    drawSky();drawBackdrop();drawHills();drawClouds();drawGround();drawDecals();drawGroundLight();drawWrecks();drawBases();
     for(const b of G.bunkers)drawBunker(b);drawEmplacements();drawRemnants();
     for(const u of G.units)drawUnit(u);for(const h of G.helis)if(!h.dead)drawHeli(h);drawProjectiles();drawParts();drawWeather();drawNight();
   }finally{G=live;cx.restore();}
